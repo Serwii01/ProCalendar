@@ -1,0 +1,7 @@
+**/node_modules/
+**/target/
+**/.angular/
+**/.idea/
+**/dist/
+output/
+*.log

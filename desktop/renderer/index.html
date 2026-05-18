@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pro Calendar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#f4f5fb;
+      --card:#ffffff;
+      --primary:#4f46e5;
+      --primary-soft:#e9eafe;
+      --line:#e8e9f3;
+      --text:#1f2937;
+      --muted:#6b7280;
+    }
+
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:'Manrope',system-ui,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+    }
+
+    .app{
+      display:grid;
+      grid-template-columns:290px 1fr 330px;
+      min-height:100vh;
+    }
+
+    .sidebar,.main,.right{padding:20px}
+    .sidebar{
+      background:#fff;
+      border-right:1px solid var(--line);
+    }
+    .right{
+      background:#fff;
+      border-left:1px solid var(--line);
+    }
+
+    .logo{
+      font-size:24px;
+      font-weight:800;
+      color:var(--primary);
+    }
+
+    .muted{color:var(--muted)}
+    .section-title{
+      font-size:12px;
+      letter-spacing:.08em;
+      text-transform:uppercase;
+      color:var(--muted);
+    }
+
+    .btn{
+      background:var(--primary);
+      color:#fff;
+      border:none;
+      border-radius:14px;
+      padding:12px 16px;
+      font-weight:700;
+      cursor:pointer;
+    }
+
+    .btn.secondary{
+      background:var(--primary-soft);
+      color:#4338ca;
+    }
+
+    .nav-item{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:12px 14px;
+      border-radius:12px;
+      margin:6px 0;
+    }
+
+    .nav-item.active{
+      background:var(--primary-soft);
+      color:#312e81;
+    }
+
+    .panel{
+      background:var(--card);
+      border:1px solid var(--line);
+      border-radius:22px;
+      padding:16px;
+      box-shadow:0 10px 30px rgba(17,24,39,.05);
+    }
+
+    .topbar{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin-bottom:20px;
+      gap:16px;
+    }
+
+    .search{
+      padding:12px 14px;
+      border:1px solid var(--line);
+      border-radius:999px;
+      min-width:280px;
+      background:#fff;
+      outline:none;
+      font-family:inherit;
+    }
+
+    .calendar-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      margin:10px 0 18px;
+    }
+
+    .grid{
+      display:grid;
+      grid-template-columns:repeat(7,1fr);
+      gap:10px;
+    }
+
+    .day{
+      background:rgba(255,255,255,.65);
+      border:1px solid var(--line);
+      border-radius:18px;
+      min-height:140px;
+      padding:12px;
+    }
+
+    .empty-state{
+      margin-top:12px;
+      padding:14px;
+      border:1px dashed #cbd5e1;
+      border-radius:16px;
+      color:var(--muted);
+      text-align:center;
+    }
+
+    .task{
+      background:#f8faff;
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:12px;
+      margin:10px 0;
+    }
+
+    .pill{
+      display:inline-block;
+      padding:4px 8px;
+      border-radius:999px;
+      background:#eef2ff;
+      color:#4338ca;
+      font-size:12px;
+    }
+
+    .footerbtn{
+      position:fixed;
+      right:28px;
+      bottom:28px;
+      width:60px;
+      height:60px;
+      border-radius:50%;
+      font-size:30px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+
+    .empty-card{
+      margin-top:18px;
+      padding:20px;
+      border:1px solid var(--line);
+      border-radius:20px;
+      background:#fff;
+      color:var(--muted);
+      text-align:center;
+    }
+
+    @media (max-width: 1200px){
+      .app{grid-template-columns:260px 1fr}
+      .right{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="logo">Pro Calendar</div>
+      <div class="muted" style="font-size:12px;margin-top:2px">Tu cuenta</div>
+
+      <div style="margin-top:22px">
+        <div class="nav-item active">📅 Mi calendario</div>
+        <div class="nav-item">💼 Trabajo</div>
+        <div class="nav-item">🏠 Personal</div>
+      </div>
+
+      <div style="margin-top:18px">
+        <button class="btn" style="width:100%">Sincronizar calendarios</button>
+      </div>
+
+      <div class="panel" style="margin-top:20px">
+        <strong>Objetivo semanal</strong>
+        <div class="muted" style="margin-top:8px">Sin datos todavía</div>
+        <div style="height:8px;background:#e8e9f3;border-radius:999px;overflow:hidden;margin-top:12px">
+          <div style="width:0%;height:100%;background:var(--primary)"></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div>
+          <div class="muted">Semana</div>
+          <h1 style="margin:4px 0 0;font-size:42px">Vista semanal</h1>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <input class="search" placeholder="Buscar eventos...">
+          <button class="btn">Añadir evento</button>
+        </div>
+      </div>
+
+      <div class="calendar-head">
+        <div class="muted">GMT+1</div>
+        <div>
+          <button class="btn secondary">◀</button>
+          <button class="btn secondary" style="margin-left:8px">▶</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="day"><strong>Lun</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Mar</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Mié</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Jue</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Vie</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Sáb</strong><div class="empty-state">Sin eventos</div></div>
+        <div class="day"><strong>Dom</strong><div class="empty-state">Sin eventos</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px">
+        <div class="panel">
+          <strong>Prioridades</strong>
+          <div class="empty-card">No hay prioridades definidas</div>
+        </div>
+
+        <div class="panel">
+          <strong>Próximos plazos</strong>
+          <div class="empty-card">No hay plazos pendientes</div>
+        </div>
+
+        <div class="panel">
+          <strong>Resumen semanal</strong>
+          <div class="empty-card">Todavía no hay actividad</div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="right">
+      <div class="section-title">Vista detalle</div>
+      <h2 style="margin:10px 0 0">Sin evento seleccionado</h2>
+
+      <div class="panel" style="margin-top:16px">
+        <strong>Crear nuevo evento</strong>
+
+        <div style="margin-top:12px">
+          <div class="muted">Título del evento</div>
+          <div class="panel" style="padding:12px;margin-top:6px;color:var(--muted)">Escribe aquí</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+            <div class="panel" style="padding:12px">
+              <div class="muted">Fecha</div>
+              <strong>Seleccionar</strong>
+            </div>
+            <div class="panel" style="padding:12px">
+              <div class="muted">Prioridad</div>
+              <strong>Normal</strong>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="muted">Notas</div>
+            <div class="panel" style="padding:12px;margin-top:6px;min-height:120px;color:var(--muted)">Añade detalles del evento</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px">
+        <button class="btn" style="width:100%">Crear evento</button>
+      </div>
+    </aside>
+  </div>
+
+  <button class="btn footerbtn">+</button>
+</body>
+<form id="form-evento">
+  <input id="titulo" placeholder="Título" required>
+  <textarea id="descripcion" placeholder="Descripción"></textarea>
+  <input id="inicio" type="datetime-local" required>
+  <input id="fin" type="datetime-local" required>
+  <button type="submit">Crear evento</button>
+</form>
+
+<ul id="lista-eventos"></ul>
+
+<script src="./app.js"></script>
+</html>
