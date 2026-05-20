@@ -7,275 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #f4f5fb;
-      --card: #ffffff;
-      --primary: #4f46e5;
-      --primary-soft: #e9eafe;
-      --line: #e8e9f3;
-      --text: #1f2937;
-      --muted: #6b7280;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      font-family: 'Manrope', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-
-    .app {
-      display: grid;
-      grid-template-columns: 290px 1fr 340px;
-      min-height: 100vh;
-    }
-
-    .sidebar, .main, .right { padding: 20px; }
-
-    .sidebar {
-      background: #fff;
-      border-right: 1px solid var(--line);
-      display: flex;
-      flex-direction: column;
-    }
-
-    .right {
-      background: #fff;
-      border-left: 1px solid var(--line);
-      overflow-y: auto;
-    }
-
-    .logo {
-      font-size: 22px;
-      font-weight: 800;
-      color: var(--primary);
-    }
-
-    .muted { color: var(--muted); }
-
-    .section-title {
-      font-size: 11px;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      color: var(--muted);
-      font-weight: 600;
-    }
-
-    .btn {
-      background: var(--primary);
-      color: #fff;
-      border: none;
-      border-radius: 14px;
-      padding: 11px 16px;
-      font-weight: 700;
-      cursor: pointer;
-      font-family: inherit;
-      font-size: 14px;
-      transition: background .15s;
-    }
-
-    .btn:hover { background: #4338ca; }
-
-    .btn.secondary {
-      background: var(--primary-soft);
-      color: #4338ca;
-    }
-
-    .btn.secondary:hover { background: #dde3fc; }
-
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 11px 14px;
-      border-radius: 12px;
-      margin: 4px 0;
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: background .15s;
-    }
-
-    .nav-item:hover { background: var(--primary-soft); }
-
-    .nav-item.active {
-      background: var(--primary-soft);
-      color: #312e81;
-      font-weight: 700;
-    }
-
-    .panel {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 16px;
-      box-shadow: 0 4px 20px rgba(17, 24, 39, .04);
-    }
-
-    .topbar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 20px;
-      gap: 16px;
-    }
-
-    .search {
-      padding: 11px 16px;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      min-width: 260px;
-      background: #fff;
-      outline: none;
-      font-family: inherit;
-      font-size: 14px;
-      transition: border .15s;
-    }
-
-    .search:focus { border-color: var(--primary); }
-
-    .calendar-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin: 0 0 16px;
-    }
-
-    .week-label {
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--muted);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(7, 1fr);
-      gap: 10px;
-    }
-
-    .day {
-      background: rgba(255, 255, 255, .8);
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      min-height: 150px;
-      padding: 12px;
-    }
-
-    .day-header {
-      font-size: 13px;
-      font-weight: 700;
-      color: var(--text);
-    }
-
-    .day-date {
-      font-size: 22px;
-      font-weight: 800;
-      margin: 2px 0 6px;
-    }
-
-    .day.today { border-color: var(--primary); background: #fafbff; }
-    .day.today .day-date { color: var(--primary); }
-
-    .event-chip {
-      background: var(--primary);
-      color: #fff;
-      border-radius: 10px;
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 600;
-      margin-top: 6px;
-      cursor: pointer;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .empty-state {
-      margin-top: 10px;
-      padding: 10px;
-      border: 1px dashed #cbd5e1;
-      border-radius: 12px;
-      color: var(--muted);
-      text-align: center;
-      font-size: 12px;
-    }
-
-    .empty-card {
-      padding: 20px;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      color: var(--muted);
-      text-align: center;
-      font-size: 13px;
-      margin-top: 10px;
-    }
-
-    .bottom-panels {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px;
-      margin-top: 16px;
-    }
-
-    .form-input {
-      width: 100%;
-      margin-top: 6px;
-      padding: 11px 14px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      font-family: inherit;
-      font-size: 14px;
-      outline: none;
-      background: #fafbff;
-      transition: border .15s;
-    }
-
-    .form-input:focus { border-color: var(--primary); background: #fff; }
-
-    textarea.form-input {
-      resize: none;
-      min-height: 80px;
-    }
-
-    .evento-card {
-      background: #f8faff;
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 12px 14px;
-      margin-bottom: 10px;
-    }
-
-    .evento-card strong { font-size: 14px; }
-
-    .evento-card .ev-meta {
-      color: var(--muted);
-      font-size: 12px;
-      margin-top: 4px;
-    }
-
-    .footerbtn {
-      position: fixed;
-      right: 28px;
-      bottom: 28px;
-      width: 56px;
-      height: 56px;
-      border-radius: 50%;
-      font-size: 28px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 8px 24px rgba(79, 70, 229, .4);
-    }
-
-    @media (max-width: 1200px) {
-      .app { grid-template-columns: 260px 1fr; }
-      .right { display: none; }
-      .bottom-panels { grid-template-columns: 1fr 1fr; }
-    }
-  </style>
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 <div class="app">
@@ -286,18 +18,19 @@
     <div class="muted" style="font-size:12px;margin-top:3px">Tu cuenta</div>
 
     <nav style="margin-top:24px">
-      <div class="nav-item active">📅 Mi calendario</div>
-      <div class="nav-item">💼 Trabajo</div>
-      <div class="nav-item">🏠 Personal</div>
+      <div class="nav-item active" data-view="calendar">📅 Calendario</div>
+      <div class="nav-item" data-view="todos">✅ Tareas</div>
     </nav>
 
-    <div style="margin-top:20px">
-      <button class="btn" style="width:100%">🔄 Sincronizar calendarios</button>
+    <div style="margin-top:20px;display:flex;flex-direction:column;gap:8px">
+      <button class="btn" id="btn-sync-google">🔄 Sincronizar Google</button>
+      <button class="btn secondary" id="btn-sync-icloud">☁️ Sincronizar iCloud</button>
+      <div id="sync-status" class="muted" style="font-size:12px;min-height:16px"></div>
     </div>
 
     <div class="panel" style="margin-top:20px">
-      <strong style="font-size:14px">Objetivo semanal</strong>
-      <div id="objetivo-label" class="muted" style="margin-top:8px;font-size:13px">Sin datos todavía</div>
+      <strong style="font-size:14px">Resumen semanal</strong>
+      <div id="panel-resumen" class="muted" style="margin-top:8px;font-size:13px">Sin datos todavía</div>
       <div style="height:8px;background:#e8e9f3;border-radius:999px;overflow:hidden;margin-top:10px">
         <div id="objetivo-bar" style="width:0%;height:100%;background:var(--primary);transition:width .4s"></div>
       </div>
@@ -313,16 +46,16 @@
       </div>
       <div style="display:flex;gap:10px;align-items:center">
         <input class="search" id="buscador" placeholder="Buscar eventos...">
-        <button class="btn" onclick="mostrarFormulario()">+ Añadir evento</button>
+        <button class="btn" id="btn-nuevo-evento">+ Añadir evento</button>
       </div>
     </div>
 
     <div class="calendar-head">
       <div class="week-label" id="rango-semana"></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn secondary" onclick="cambiarSemana(-1)">◀</button>
-        <button class="btn secondary" onclick="cambiarSemana(0)" style="font-size:13px;padding:10px 14px">Hoy</button>
-        <button class="btn secondary" onclick="cambiarSemana(1)">▶</button>
+        <button class="btn secondary" id="btn-prev">◀</button>
+        <button class="btn secondary" id="btn-hoy" style="font-size:13px;padding:10px 14px">Hoy</button>
+        <button class="btn secondary" id="btn-next">▶</button>
       </div>
     </div>
 
@@ -330,27 +63,28 @@
 
     <div class="bottom-panels">
       <div class="panel">
-        <strong>Prioridades</strong>
-        <div id="panel-prioridades" class="empty-card">No hay prioridades definidas</div>
+        <strong>Tareas activas</strong>
+        <div id="panel-todos" class="empty-card">Cargando tareas...</div>
       </div>
       <div class="panel">
-        <strong>Próximos plazos</strong>
-        <div id="panel-plazos" class="empty-card">No hay plazos pendientes</div>
+        <strong>Próximos eventos</strong>
+        <div id="panel-proximos" class="empty-card">No hay eventos próximos</div>
       </div>
       <div class="panel">
-        <strong>Resumen semanal</strong>
-        <div id="panel-resumen" class="empty-card">Todavía no hay actividad</div>
+        <strong>Sincronización</strong>
+        <div id="panel-sync" class="empty-card">Configura Google o iCloud en application.properties</div>
       </div>
     </div>
   </main>
 
   <!-- PANEL DERECHO -->
   <aside class="right">
-    <div class="section-title">Panel lateral</div>
+    <div class="section-title">Detalle</div>
 
     <form id="form-evento" style="margin-top:14px">
+      <input type="hidden" id="evento-id">
       <div class="panel">
-        <strong style="font-size:15px">Crear nuevo evento</strong>
+        <strong id="form-titulo-cabecera" style="font-size:15px">Crear nuevo evento</strong>
 
         <div style="margin-top:14px">
           <div class="muted" style="font-size:13px;font-weight:600">Título *</div>
@@ -358,11 +92,21 @@
         </div>
 
         <div style="margin-top:12px">
+          <div class="muted" style="font-size:13px;font-weight:600">Ubicación</div>
+          <input id="ubicacion" class="form-input" placeholder="Sala, dirección, link...">
+        </div>
+
+        <div style="margin-top:12px">
           <div class="muted" style="font-size:13px;font-weight:600">Descripción</div>
           <textarea id="descripcion" class="form-input" placeholder="Detalles del evento..."></textarea>
         </div>
 
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
+        <label class="checkbox-row" style="margin-top:12px">
+          <input type="checkbox" id="all-day">
+          <span>Todo el día (modelo iCloud)</span>
+        </label>
+
+        <div id="campos-horarios" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px">
           <div>
             <div class="muted" style="font-size:13px;font-weight:600">Inicio *</div>
             <input id="inicio" type="datetime-local" class="form-input" required>
@@ -373,21 +117,45 @@
           </div>
         </div>
 
-        <button type="submit" class="btn" style="width:100%;margin-top:16px">✓ Crear evento</button>
+        <div id="campos-dia" style="display:none;margin-top:12px">
+          <div class="muted" style="font-size:13px;font-weight:600">Día *</div>
+          <input id="dia" type="date" class="form-input">
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted" style="font-size:13px;font-weight:600">Color</div>
+          <div id="picker-color" class="color-picker"></div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:16px">
+          <button type="submit" class="btn" style="flex:1">✓ Guardar</button>
+          <button type="button" class="btn secondary" id="btn-cancelar" style="flex:1">Cancelar</button>
+        </div>
+        <button type="button" class="btn danger" id="btn-borrar" style="width:100%;margin-top:8px;display:none">🗑 Borrar evento</button>
       </div>
     </form>
 
+    <!-- TO-DO PANEL -->
     <div style="margin-top:20px">
-      <div class="section-title" style="margin-bottom:10px">Todos los eventos</div>
-      <div id="lista-eventos">
-        <div class="empty-card">No hay eventos todavía.</div>
+      <div class="section-title" style="margin-bottom:10px">Tareas</div>
+      <div class="panel">
+        <form id="form-todo" style="display:flex;gap:8px">
+          <input id="todo-titulo" class="form-input" placeholder="Nueva tarea..." style="flex:1;margin:0">
+          <select id="todo-prioridad" class="form-input" style="width:110px;margin:0">
+            <option value="LOW">Baja</option>
+            <option value="MEDIUM" selected>Media</option>
+            <option value="HIGH">Alta</option>
+          </select>
+          <button type="submit" class="btn" style="padding:11px 14px">+</button>
+        </form>
+        <div id="lista-todos" style="margin-top:12px"></div>
       </div>
     </div>
   </aside>
 
 </div>
 
-<button class="btn footerbtn" onclick="mostrarFormulario()">+</button>
+<button class="btn footerbtn" id="btn-nuevo-evento-fab" title="Añadir evento">+</button>
 
 <script src="./app.js"></script>
 </body>
