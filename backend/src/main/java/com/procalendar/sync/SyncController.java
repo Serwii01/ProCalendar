@@ -3,15 +3,18 @@ package com.procalendar.sync;
 import com.procalendar.sync.google.GoogleCalendarSyncService;
 import com.procalendar.sync.icloud.ICloudCalDavSyncService;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.view.RedirectView;
 
 import java.util.List;
 import java.util.Map;
 
 /**
- * HTTP wrapper around the sync providers so the desktop UI can trigger a sync
- * via the "Sincronizar calendarios" button.
+ * HTTP wrapper around the sync providers so the desktop UI can trigger a sync.
  */
 @RestController
 @RequestMapping("/api/sync")
@@ -34,6 +37,14 @@ public class SyncController {
         );
     }
 
+    @GetMapping("/status")
+    public Map<String, Object> status(Authentication auth) {
+        return Map.of(
+                "googleAuthenticated", auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof OAuth2User,
+                "principal", auth == null ? "" : auth.getName()
+        );
+    }
+
     @PostMapping("/{provider}")
     public SyncResult sync(@PathVariable String provider,
                            @RequestParam(defaultValue = "full") String mode) {
@@ -44,6 +55,34 @@ public class SyncController {
             case "full" -> svc.fullSync();
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be pull|push|full");
         };
+    }
+
+    /** Landing page after a successful Google OAuth2 redirect from Spring Security. */
+    @GetMapping("/oauth-success")
+    public RedirectView oauthSuccess(@AuthenticationPrincipal OAuth2User principal,
+                                     Authentication auth) {
+        if (principal != null && auth != null) {
+            google.rememberPrincipal(auth.getName());
+        }
+        // Tiny HTML response would also work, but redirecting closes the loop cleanly.
+        // We send to a status page the desktop can poll, or just show a "done" message.
+        return new RedirectView("/api/sync/oauth-done");
+    }
+
+    @GetMapping(value = "/oauth-done", produces = "text/html")
+    public String oauthDone() {
+        return """
+            <!doctype html>
+            <html lang="es"><head><meta charset="utf-8"><title>Conectado</title>
+            <style>body{font-family:system-ui;background:#f9f9ff;color:#111c2d;
+            display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+            .card{background:#fff;padding:32px;border-radius:18px;text-align:center;
+            box-shadow:0 12px 40px rgba(17,28,45,.12);max-width:420px}
+            h1{color:#4f46e5;margin:0 0 8px}p{color:#464555}</style></head>
+            <body><div class="card"><h1>✓ Google conectado</h1>
+            <p>Ya puedes cerrar esta pestaña y volver a Pro Calendar.<br>
+            Pulsa <b>Sincronizar Google</b> para traer tus eventos.</p></div></body></html>
+            """;
     }
 
     private CalendarSyncProvider resolve(String name) {
