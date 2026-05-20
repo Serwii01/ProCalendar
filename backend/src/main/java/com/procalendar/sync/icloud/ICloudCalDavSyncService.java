@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
@@ -22,7 +24,9 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 
 /**
  * iCloud Calendar sync via CalDAV (RFC 4791).
@@ -72,6 +76,9 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     @Value("${procalendar.sync.icloud.app-password:}") private String appPassword;
     @Value("${procalendar.sync.icloud.calendar-url:}") private String calendarUrl;
 
+    /** Cached after first auto-discovery so we don't repeat PROPFINDs every sync. */
+    private volatile String discoveredCalendarUrl;
+
     public ICloudCalDavSyncService(CalendarEventRepository repository) {
         this.repository = repository;
     }
@@ -83,14 +90,27 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         if (!enabled) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado (procalendar.sync.icloud.enabled=false)");
         if (appleId.isBlank() || appPassword.isBlank())
             return new SyncResult(name(), 0, 0, 0, 0, "faltan apple-id / app-password");
-        if (calendarUrl.isBlank())
-            return new SyncResult(name(), 0, 0, 0, 0, "falta calendar-url");
+
+        // Auto-discover the calendar URL if not configured
+        String url = !calendarUrl.isBlank() ? calendarUrl : discoveredCalendarUrl;
+        if (url == null || url.isBlank()) {
+            try {
+                List<String> found = discoverCalendars();
+                if (found.isEmpty()) return new SyncResult(name(), 0, 0, 0, 0, "no se encontró ningún calendario en iCloud");
+                discoveredCalendarUrl = found.get(0);
+                url = discoveredCalendarUrl;
+                log.info("[icloud] auto-discovered calendar URL: {}", url);
+            } catch (Exception e) {
+                log.error("[icloud] discovery error", e);
+                return new SyncResult(name(), 0, 0, 0, 0, "no se pudo descubrir la URL: " + e.getMessage());
+            }
+        }
 
         int imported = 0, updated = 0, skipped = 0;
         try {
             String basic = Base64.getEncoder().encodeToString((appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
             HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(calendarUrl))
+                    .uri(URI.create(url))
                     .header("Authorization", "Basic " + basic)
                     .header("Content-Type", "application/xml; charset=utf-8")
                     .header("Depth", "1")
@@ -278,6 +298,124 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
 
     private static String escapeIcs(String s) {
         return s.replace("\\","\\\\").replace(";","\\;").replace(",","\\,").replace("\n","\\n");
+    }
+
+    // -----------------------------------------------------------------------
+    // CalDAV auto-discovery (RFC 5397 + RFC 4791)
+    // -----------------------------------------------------------------------
+    /**
+     * Discovers the user's calendar collections by doing the standard CalDAV
+     * PROPFIND chain: well-known root -> current-user-principal ->
+     * calendar-home-set -> child collections (PROPFIND Depth:1).
+     *
+     * Returns a list of full HTTP URLs to each calendar collection.
+     */
+    public List<String> discoverCalendars() throws Exception {
+        String basic = Base64.getEncoder().encodeToString(
+                (appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
+
+        // 1) PROPFIND on root to get the principal URL
+        String principal = propfindSingle(
+                "https://caldav.icloud.com/",
+                basic,
+                "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop><D:current-user-principal/></D:prop>
+                </D:propfind>
+                """,
+                "DAV:", "current-user-principal");
+        if (principal == null) throw new RuntimeException("principal no encontrado");
+        String principalUrl = absolutize("https://caldav.icloud.com/", principal);
+
+        // 2) PROPFIND on principal to get the calendar-home-set
+        String homeSet = propfindSingle(
+                principalUrl,
+                basic,
+                "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:prop><C:calendar-home-set/></D:prop>
+                </D:propfind>
+                """,
+                "urn:ietf:params:xml:ns:caldav", "calendar-home-set");
+        if (homeSet == null) throw new RuntimeException("calendar-home-set no encontrado");
+        String homeUrl = absolutize(principalUrl, homeSet);
+
+        // 3) PROPFIND Depth:1 on the home to list child collections
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(homeUrl))
+                .header("Authorization", "Basic " + basic)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .header("Depth", "1")
+                .method("PROPFIND", HttpRequest.BodyPublishers.ofString("""
+                        <?xml version="1.0" encoding="utf-8" ?>
+                        <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:prop>
+                            <D:resourcetype/>
+                            <D:displayname/>
+                            <C:supported-calendar-component-set/>
+                          </D:prop>
+                        </D:propfind>
+                        """, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode() + " listando calendarios");
+
+        Document doc = parseXml(res.body());
+        NodeList responses = doc.getElementsByTagNameNS("DAV:", "response");
+        List<String> calendars = new ArrayList<>();
+        for (int i = 0; i < responses.getLength(); i++) {
+            Element r = (Element) responses.item(i);
+            // Need both a <calendar/> in resourcetype AND VEVENT in supported-calendar-component-set
+            NodeList rtype = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "calendar");
+            if (rtype.getLength() == 0) continue;
+
+            NodeList comps = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "comp");
+            boolean hasVevent = false;
+            for (int j = 0; j < comps.getLength(); j++) {
+                String name = ((Element) comps.item(j)).getAttribute("name");
+                if ("VEVENT".equalsIgnoreCase(name)) { hasVevent = true; break; }
+            }
+            if (!hasVevent) continue;
+
+            NodeList hrefs = r.getElementsByTagNameNS("DAV:", "href");
+            if (hrefs.getLength() == 0) continue;
+            String href = hrefs.item(0).getTextContent().trim();
+            calendars.add(absolutize(homeUrl, href));
+        }
+        return calendars;
+    }
+
+    /** Runs a PROPFIND Depth:0 and extracts the first <href> inside a specific property. */
+    private String propfindSingle(String url, String basic, String depth, String body,
+                                  String propNs, String propName) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Basic " + basic)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .header("Depth", depth)
+                .method("PROPFIND", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() / 100 != 2) {
+            throw new RuntimeException("PROPFIND " + url + " -> HTTP " + res.statusCode());
+        }
+        Document doc = parseXml(res.body());
+        NodeList target = doc.getElementsByTagNameNS(propNs, propName);
+        if (target.getLength() == 0) return null;
+        NodeList hrefs = ((Element) target.item(0)).getElementsByTagNameNS("DAV:", "href");
+        if (hrefs.getLength() == 0) return null;
+        return hrefs.item(0).getTextContent().trim();
+    }
+
+    /** Resolves a possibly relative href against a base URL. */
+    private static String absolutize(String base, String href) {
+        if (href.startsWith("http://") || href.startsWith("https://")) return href;
+        URI b = URI.create(base);
+        return b.getScheme() + "://" + b.getAuthority() + (href.startsWith("/") ? href : "/" + href);
     }
 
     private static Document parseXml(String body) throws Exception {
