@@ -10,7 +10,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
@@ -24,29 +23,8 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Base64;
-import java.util.List;
+import java.util.*;
 
-/**
- * iCloud Calendar sync via CalDAV (RFC 4791).
- *
- * Quick-start for the user:
- *  1. Generate an app-specific password at https://appleid.apple.com.
- *  2. Set in application.properties:
- *       procalendar.sync.icloud.enabled=true
- *       procalendar.sync.icloud.apple-id=tu@icloud.com
- *       procalendar.sync.icloud.app-password=xxxx-xxxx-xxxx-xxxx
- *       procalendar.sync.icloud.calendar-url=https://pXX-caldav.icloud.com/<userId>/calendars/home/
- *     The exact calendar URL depends on your iCloud user; you can discover it
- *     via PROPFIND on caldav.icloud.com. For now, paste your Calendar URL here.
- *
- * Implementation:
- *  - POST with REPORT method against the calendar collection URL.
- *  - Request body asks for VEVENT items via calendar-query.
- *  - The response is a multistatus XML; we extract each <C:calendar-data>
- *    block (an .ics blob) and parse the VEVENT lines.
- */
 @Service
 public class ICloudCalDavSyncService implements CalendarSyncProvider {
 
@@ -76,8 +54,8 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     @Value("${procalendar.sync.icloud.app-password:}") private String appPassword;
     @Value("${procalendar.sync.icloud.calendar-url:}") private String calendarUrl;
 
-    /** Cached after first auto-discovery so we don't repeat PROPFINDs every sync. */
-    private volatile String discoveredCalendarUrl;
+    /** Caché de todos los calendarios descubiertos: nombre → URL */
+    private volatile Map<String, String> discoveredCalendars;
 
     public ICloudCalDavSyncService(CalendarEventRepository repository) {
         this.repository = repository;
@@ -85,74 +63,75 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
 
     @Override public String name() { return "icloud"; }
 
+    // -----------------------------------------------------------------------
+    // PULL — lee TODOS los calendarios de iCloud
+    // -----------------------------------------------------------------------
     @Override
     public SyncResult pull() {
-        if (!enabled) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado (procalendar.sync.icloud.enabled=false)");
+        if (!enabled) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado");
         if (appleId.isBlank() || appPassword.isBlank())
             return new SyncResult(name(), 0, 0, 0, 0, "faltan apple-id / app-password");
 
-        // Auto-discover the calendar URL if not configured
-        String url = !calendarUrl.isBlank() ? calendarUrl : discoveredCalendarUrl;
-        if (url == null || url.isBlank()) {
-            try {
-                List<String> found = discoverCalendars();
-                if (found.isEmpty()) return new SyncResult(name(), 0, 0, 0, 0, "no se encontró ningún calendario en iCloud");
-                discoveredCalendarUrl = found.get(0);
-                url = discoveredCalendarUrl;
-                log.info("[icloud] auto-discovered calendar URL: {}", url);
-            } catch (Exception e) {
-                log.error("[icloud] discovery error", e);
-                return new SyncResult(name(), 0, 0, 0, 0, "no se pudo descubrir la URL: " + e.getMessage());
-            }
-        }
+        // Obtener lista de URLs a leer
+        List<String> urls = resolveAllUrls();
+        if (urls.isEmpty()) return new SyncResult(name(), 0, 0, 0, 0, "no se encontraron calendarios");
 
+        String basic = buildBasic();
         int imported = 0, updated = 0, skipped = 0;
-        try {
-            String basic = Base64.getEncoder().encodeToString((appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
-            HttpRequest req = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .header("Authorization", "Basic " + basic)
-                    .header("Content-Type", "application/xml; charset=utf-8")
-                    .header("Depth", "1")
-                    .method("REPORT", HttpRequest.BodyPublishers.ofString(CALENDAR_QUERY_BODY, StandardCharsets.UTF_8))
-                    .build();
 
-            HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (res.statusCode() / 100 != 2) {
-                return new SyncResult(name(), 0, 0, 0, 0, "HTTP " + res.statusCode());
-            }
+        for (String url : urls) {
+            log.info("[icloud] pulling from: {}", url);
+            try {
+                HttpRequest req = HttpRequest.newBuilder()
+                        .uri(URI.create(url))
+                        .header("Authorization", "Basic " + basic)
+                        .header("Content-Type", "application/xml; charset=utf-8")
+                        .header("Depth", "1")
+                        .method("REPORT", HttpRequest.BodyPublishers.ofString(CALENDAR_QUERY_BODY, StandardCharsets.UTF_8))
+                        .build();
 
-            // Parse multistatus XML and extract every <calendar-data> blob.
-            Document doc = parseXml(res.body());
-            NodeList datas = doc.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "calendar-data");
-            for (int i = 0; i < datas.getLength(); i++) {
-                String ics = datas.item(i).getTextContent();
-                ParsedVEvent v = parseVEvent(ics);
-                if (v == null || v.uid == null || v.summary == null || v.dtstart == null) { skipped++; continue; }
-                boolean isNew = repository.findBySourceAndExternalId(CalendarEvent.Source.ICLOUD, v.uid).isEmpty();
-                upsertFromIcs(v);
-                if (isNew) imported++; else updated++;
+                HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (res.statusCode() / 100 != 2) {
+                    log.warn("[icloud] HTTP {} for {}", res.statusCode(), url);
+                    continue;
+                }
+
+                Document doc = parseXml(res.body());
+                NodeList datas = doc.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "calendar-data");
+                for (int i = 0; i < datas.getLength(); i++) {
+                    String ics = datas.item(i).getTextContent();
+                    ParsedVEvent v = parseVEvent(ics);
+                    if (v == null || v.uid == null || v.summary == null || v.dtstart == null) { skipped++; continue; }
+                    boolean isNew = repository.findBySourceAndExternalId(CalendarEvent.Source.ICLOUD, v.uid).isEmpty();
+                    upsertFromIcs(v, url);
+                    if (isNew) imported++; else updated++;
+                }
+            } catch (Exception e) {
+                log.error("[icloud] pull error for {}: {}", url, e.getMessage());
             }
-            return new SyncResult(name(), imported, updated, 0, skipped, "pull ok");
-        } catch (Exception e) {
-            log.error("[icloud] pull error", e);
-            return new SyncResult(name(), imported, updated, 0, skipped, "error: " + e.getMessage());
         }
+        return new SyncResult(name(), imported, updated, 0, skipped, "pull ok (" + urls.size() + " calendarios)");
     }
 
+    // -----------------------------------------------------------------------
+    // PUSH — sube eventos locales al calendario configurado (el primero si no hay url fija)
+    // -----------------------------------------------------------------------
     @Override
     public SyncResult push() {
         if (!enabled) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado");
-        if (calendarUrl.isBlank()) return new SyncResult(name(), 0, 0, 0, 0, "falta calendar-url");
+
+        String targetUrl = calendarUrl.isBlank() ? getFirstDiscoveredUrl() : calendarUrl;
+        if (targetUrl == null || targetUrl.isBlank())
+            return new SyncResult(name(), 0, 0, 0, 0, "falta calendar-url");
 
         int pushed = 0, errors = 0;
-        String basic = Base64.getEncoder().encodeToString((appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
+        String basic = buildBasic();
 
         for (CalendarEvent ev : repository.findAll()) {
             if (ev.getSource() != CalendarEvent.Source.LOCAL || ev.getExternalId() != null) continue;
             String uid = "procal-" + ev.getId() + "@local";
             String ics = buildVCalendar(uid, ev);
-            String href = calendarUrl + (calendarUrl.endsWith("/") ? "" : "/") + uid + ".ics";
+            String href = targetUrl + (targetUrl.endsWith("/") ? "" : "/") + uid + ".ics";
             try {
                 HttpRequest put = HttpRequest.newBuilder()
                         .uri(URI.create(href))
@@ -165,7 +144,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                 if (r.statusCode() / 100 == 2) {
                     ev.setSource(CalendarEvent.Source.ICLOUD);
                     ev.setExternalId(uid);
-                    ev.setExternalCalendarId(calendarUrl);
+                    ev.setExternalCalendarId(targetUrl);
                     ev.setLastSyncedAt(LocalDateTime.now());
                     repository.save(ev);
                     pushed++;
@@ -181,7 +160,124 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     // -----------------------------------------------------------------------
-    // VEVENT parsing
+    // Discovery público — devuelve nombre → URL para el endpoint REST
+    // -----------------------------------------------------------------------
+    public Map<String, String> discoverCalendarsWithNames() throws Exception {
+        String basic = buildBasic();
+
+        String principal = propfindSingle("https://caldav.icloud.com/", basic, "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop><D:current-user-principal/></D:prop>
+                </D:propfind>
+                """, "DAV:", "current-user-principal");
+        if (principal == null) throw new RuntimeException("principal no encontrado");
+        String principalUrl = absolutize("https://caldav.icloud.com/", principal);
+
+        String homeSet = propfindSingle(principalUrl, basic, "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                  <D:prop><C:calendar-home-set/></D:prop>
+                </D:propfind>
+                """, "urn:ietf:params:xml:ns:caldav", "calendar-home-set");
+        if (homeSet == null) throw new RuntimeException("calendar-home-set no encontrado");
+        String homeUrl = absolutize(principalUrl, homeSet);
+
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(homeUrl))
+                .header("Authorization", "Basic " + basic)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .header("Depth", "1")
+                .method("PROPFIND", HttpRequest.BodyPublishers.ofString("""
+                        <?xml version="1.0" encoding="utf-8" ?>
+                        <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+                          <D:prop>
+                            <D:resourcetype/>
+                            <D:displayname/>
+                            <C:supported-calendar-component-set/>
+                          </D:prop>
+                        </D:propfind>
+                        """, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode());
+
+        Document doc = parseXml(res.body());
+        NodeList responses = doc.getElementsByTagNameNS("DAV:", "response");
+        Map<String, String> result = new LinkedHashMap<>();
+
+        for (int i = 0; i < responses.getLength(); i++) {
+            Element r = (Element) responses.item(i);
+            NodeList rtype = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "calendar");
+            if (rtype.getLength() == 0) continue;
+
+            NodeList comps = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "comp");
+            boolean hasVevent = false;
+            for (int j = 0; j < comps.getLength(); j++) {
+                if ("VEVENT".equalsIgnoreCase(((Element) comps.item(j)).getAttribute("name"))) {
+                    hasVevent = true; break;
+                }
+            }
+            if (!hasVevent) continue;
+
+            NodeList hrefs = r.getElementsByTagNameNS("DAV:", "href");
+            NodeList names = r.getElementsByTagNameNS("DAV:", "displayname");
+            if (hrefs.getLength() == 0) continue;
+
+            String url  = absolutize(homeUrl, hrefs.item(0).getTextContent().trim());
+            String name = names.getLength() > 0 ? names.item(0).getTextContent().trim() : url;
+            result.put(name, url);
+            log.info("[icloud] calendario encontrado: '{}' -> {}", name, url);
+        }
+
+        this.discoveredCalendars = result;
+        return result;
+    }
+
+    /** Mantiene compatibilidad con el método original que devuelve solo URLs */
+    public List<String> discoverCalendars() throws Exception {
+        return new ArrayList<>(discoverCalendarsWithNames().values());
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers internos
+    // -----------------------------------------------------------------------
+    private List<String> resolveAllUrls() {
+        // Si hay URL fija en config, úsala sola (comportamiento legacy)
+        if (!calendarUrl.isBlank()) return List.of(calendarUrl);
+
+        // Si ya tenemos el discovery en caché, úsalo
+        if (discoveredCalendars != null && !discoveredCalendars.isEmpty())
+            return new ArrayList<>(discoveredCalendars.values());
+
+        // Auto-discover ahora
+        try {
+            Map<String, String> found = discoverCalendarsWithNames();
+            return new ArrayList<>(found.values());
+        } catch (Exception e) {
+            log.error("[icloud] auto-discovery failed: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String getFirstDiscoveredUrl() {
+        if (discoveredCalendars != null && !discoveredCalendars.isEmpty())
+            return discoveredCalendars.values().iterator().next();
+        try {
+            List<String> urls = discoverCalendars();
+            return urls.isEmpty() ? null : urls.get(0);
+        } catch (Exception e) { return null; }
+    }
+
+    private String buildBasic() {
+        return Base64.getEncoder().encodeToString(
+                (appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
+    }
+
+    // -----------------------------------------------------------------------
+    // VEVENT parsing (sin cambios)
     // -----------------------------------------------------------------------
     private static final DateTimeFormatter ICS_DATETIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
     private static final DateTimeFormatter ICS_DATE     = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -192,9 +288,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         boolean allDay;
     }
 
-    /** Minimal but robust VEVENT parser. Handles line unfolding and DATE vs DATE-TIME values. */
     static ParsedVEvent parseVEvent(String ics) {
-        // RFC 5545 line unfolding: a line starting with space/tab continues the previous one.
         String[] raw = ics.split("\\r?\\n");
         StringBuilder all = new StringBuilder();
         for (String line : raw) {
@@ -206,20 +300,17 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
             }
         }
         String[] lines = all.toString().split("\n");
-
         boolean inEvent = false;
         ParsedVEvent v = new ParsedVEvent();
         for (String line : lines) {
             if (line.startsWith("BEGIN:VEVENT")) { inEvent = true; continue; }
             if (line.startsWith("END:VEVENT"))   { return v; }
             if (!inEvent) continue;
-
             int colon = line.indexOf(':');
             if (colon < 0) continue;
             String head = line.substring(0, colon);
             String val  = unescape(line.substring(colon + 1));
             String name = head.contains(";") ? head.substring(0, head.indexOf(';')) : head;
-
             switch (name) {
                 case "UID"         -> v.uid = val;
                 case "SUMMARY"     -> v.summary = val;
@@ -234,10 +325,6 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     private static LocalDateTime[] parseIcsDate(String head, String val) {
-        // head examples:
-        //   DTSTART;VALUE=DATE         -> all-day, val = yyyymmdd
-        //   DTSTART;TZID=Europe/Madrid -> floating local, val = yyyymmddThhmmss
-        //   DTSTART                    -> UTC (suffix Z), val = yyyymmddThhmmssZ
         boolean isDate = head.contains("VALUE=DATE") && !head.contains("VALUE=DATE-TIME");
         if (isDate) {
             LocalDate d = LocalDate.parse(val, ICS_DATE);
@@ -255,12 +342,12 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         return s.replace("\\n","\n").replace("\\,",",").replace("\\;",";").replace("\\\\","\\");
     }
 
-    private CalendarEvent upsertFromIcs(ParsedVEvent v) {
+    private CalendarEvent upsertFromIcs(ParsedVEvent v, String sourceUrl) {
         CalendarEvent ev = repository.findBySourceAndExternalId(CalendarEvent.Source.ICLOUD, v.uid)
                 .orElseGet(CalendarEvent::new);
         ev.setSource(CalendarEvent.Source.ICLOUD);
         ev.setExternalId(v.uid);
-        ev.setExternalCalendarId(calendarUrl);
+        ev.setExternalCalendarId(sourceUrl);
         ev.setTitle(v.summary);
         ev.setDescription(v.description);
         ev.setLocation(v.location);
@@ -277,12 +364,12 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         DateTimeFormatter d = DateTimeFormatter.ofPattern("yyyyMMdd");
         StringBuilder sb = new StringBuilder();
         sb.append("BEGIN:VCALENDAR\r\n")
-          .append("VERSION:2.0\r\n")
-          .append("PRODID:-//Pro Calendar//EN\r\n")
-          .append("BEGIN:VEVENT\r\n")
-          .append("UID:").append(uid).append("\r\n")
-          .append("DTSTAMP:").append(LocalDateTime.now().format(f)).append("\r\n")
-          .append("SUMMARY:").append(escapeIcs(ev.getTitle())).append("\r\n");
+                .append("VERSION:2.0\r\n")
+                .append("PRODID:-//Pro Calendar//EN\r\n")
+                .append("BEGIN:VEVENT\r\n")
+                .append("UID:").append(uid).append("\r\n")
+                .append("DTSTAMP:").append(LocalDateTime.now().format(f)).append("\r\n")
+                .append("SUMMARY:").append(escapeIcs(ev.getTitle())).append("\r\n");
         if (ev.getDescription() != null) sb.append("DESCRIPTION:").append(escapeIcs(ev.getDescription())).append("\r\n");
         if (ev.getLocation() != null)    sb.append("LOCATION:").append(escapeIcs(ev.getLocation())).append("\r\n");
         if (ev.isAllDay()) {
@@ -301,95 +388,8 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     // -----------------------------------------------------------------------
-    // CalDAV auto-discovery (RFC 5397 + RFC 4791)
+    // CalDAV helpers
     // -----------------------------------------------------------------------
-    /**
-     * Discovers the user's calendar collections by doing the standard CalDAV
-     * PROPFIND chain: well-known root -> current-user-principal ->
-     * calendar-home-set -> child collections (PROPFIND Depth:1).
-     *
-     * Returns a list of full HTTP URLs to each calendar collection.
-     */
-    public List<String> discoverCalendars() throws Exception {
-        String basic = Base64.getEncoder().encodeToString(
-                (appleId + ":" + appPassword).getBytes(StandardCharsets.UTF_8));
-
-        // 1) PROPFIND on root to get the principal URL
-        String principal = propfindSingle(
-                "https://caldav.icloud.com/",
-                basic,
-                "0",
-                """
-                <?xml version="1.0" encoding="utf-8" ?>
-                <D:propfind xmlns:D="DAV:">
-                  <D:prop><D:current-user-principal/></D:prop>
-                </D:propfind>
-                """,
-                "DAV:", "current-user-principal");
-        if (principal == null) throw new RuntimeException("principal no encontrado");
-        String principalUrl = absolutize("https://caldav.icloud.com/", principal);
-
-        // 2) PROPFIND on principal to get the calendar-home-set
-        String homeSet = propfindSingle(
-                principalUrl,
-                basic,
-                "0",
-                """
-                <?xml version="1.0" encoding="utf-8" ?>
-                <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                  <D:prop><C:calendar-home-set/></D:prop>
-                </D:propfind>
-                """,
-                "urn:ietf:params:xml:ns:caldav", "calendar-home-set");
-        if (homeSet == null) throw new RuntimeException("calendar-home-set no encontrado");
-        String homeUrl = absolutize(principalUrl, homeSet);
-
-        // 3) PROPFIND Depth:1 on the home to list child collections
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(homeUrl))
-                .header("Authorization", "Basic " + basic)
-                .header("Content-Type", "application/xml; charset=utf-8")
-                .header("Depth", "1")
-                .method("PROPFIND", HttpRequest.BodyPublishers.ofString("""
-                        <?xml version="1.0" encoding="utf-8" ?>
-                        <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-                          <D:prop>
-                            <D:resourcetype/>
-                            <D:displayname/>
-                            <C:supported-calendar-component-set/>
-                          </D:prop>
-                        </D:propfind>
-                        """, StandardCharsets.UTF_8))
-                .build();
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode() + " listando calendarios");
-
-        Document doc = parseXml(res.body());
-        NodeList responses = doc.getElementsByTagNameNS("DAV:", "response");
-        List<String> calendars = new ArrayList<>();
-        for (int i = 0; i < responses.getLength(); i++) {
-            Element r = (Element) responses.item(i);
-            // Need both a <calendar/> in resourcetype AND VEVENT in supported-calendar-component-set
-            NodeList rtype = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "calendar");
-            if (rtype.getLength() == 0) continue;
-
-            NodeList comps = r.getElementsByTagNameNS("urn:ietf:params:xml:ns:caldav", "comp");
-            boolean hasVevent = false;
-            for (int j = 0; j < comps.getLength(); j++) {
-                String name = ((Element) comps.item(j)).getAttribute("name");
-                if ("VEVENT".equalsIgnoreCase(name)) { hasVevent = true; break; }
-            }
-            if (!hasVevent) continue;
-
-            NodeList hrefs = r.getElementsByTagNameNS("DAV:", "href");
-            if (hrefs.getLength() == 0) continue;
-            String href = hrefs.item(0).getTextContent().trim();
-            calendars.add(absolutize(homeUrl, href));
-        }
-        return calendars;
-    }
-
-    /** Runs a PROPFIND Depth:0 and extracts the first <href> inside a specific property. */
     private String propfindSingle(String url, String basic, String depth, String body,
                                   String propNs, String propName) throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
@@ -400,9 +400,8 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                 .method("PROPFIND", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (res.statusCode() / 100 != 2) {
+        if (res.statusCode() / 100 != 2)
             throw new RuntimeException("PROPFIND " + url + " -> HTTP " + res.statusCode());
-        }
         Document doc = parseXml(res.body());
         NodeList target = doc.getElementsByTagNameNS(propNs, propName);
         if (target.getLength() == 0) return null;
@@ -411,7 +410,6 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         return hrefs.item(0).getTextContent().trim();
     }
 
-    /** Resolves a possibly relative href against a base URL. */
     private static String absolutize(String base, String href) {
         if (href.startsWith("http://") || href.startsWith("https://")) return href;
         URI b = URI.create(base);

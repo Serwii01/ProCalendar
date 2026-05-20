@@ -13,9 +13,6 @@ import org.springframework.web.servlet.view.RedirectView;
 import java.util.List;
 import java.util.Map;
 
-/**
- * HTTP wrapper around the sync providers so the desktop UI can trigger a sync.
- */
 @RestController
 @RequestMapping("/api/sync")
 @CrossOrigin(origins = "*")
@@ -57,15 +54,19 @@ public class SyncController {
         };
     }
 
-    /** Landing page after a successful Google OAuth2 redirect from Spring Security. */
+    // ── NUEVO ──────────────────────────────────────────────────────────────
+    @GetMapping("/icloud/calendars")
+    public Map<String, String> icloudCalendars() throws Exception {
+        return icloud.discoverCalendarsWithNames();
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
     @GetMapping("/oauth-success")
     public RedirectView oauthSuccess(@AuthenticationPrincipal OAuth2User principal,
                                      Authentication auth) {
         if (principal != null && auth != null) {
             google.rememberPrincipal(auth.getName());
         }
-        // Tiny HTML response would also work, but redirecting closes the loop cleanly.
-        // We send to a status page the desktop can poll, or just show a "done" message.
         return new RedirectView("/api/sync/oauth-done");
     }
 
