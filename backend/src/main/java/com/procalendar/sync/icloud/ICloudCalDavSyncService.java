@@ -72,7 +72,6 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         if (appleId.isBlank() || appPassword.isBlank())
             return new SyncResult(name(), 0, 0, 0, 0, "faltan apple-id / app-password");
 
-        // Obtener lista de URLs a leer
         List<String> urls = resolveAllUrls();
         if (urls.isEmpty()) return new SyncResult(name(), 0, 0, 0, 0, "no se encontraron calendarios");
 
@@ -114,7 +113,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     // -----------------------------------------------------------------------
-    // PUSH — sube eventos locales al calendario configurado (el primero si no hay url fija)
+    // PUSH — sube eventos locales al calendario configurado
     // -----------------------------------------------------------------------
     @Override
     public SyncResult push() {
@@ -165,26 +164,23 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     public Map<String, String> discoverCalendarsWithNames() throws Exception {
         String basic = buildBasic();
 
-        String principal = propfindSingle("https://caldav.icloud.com/", basic, "0",
-                """
-                <?xml version="1.0" encoding="utf-8" ?>
-                <D:propfind xmlns:D="DAV:">
-                  <D:prop><D:current-user-principal/></D:prop>
-                </D:propfind>
-                """, "DAV:", "current-user-principal");
-        if (principal == null) throw new RuntimeException("principal no encontrado");
-        String principalUrl = absolutize("https://caldav.icloud.com/", principal);
+        // Step 1: resolve principal URL via .well-known or root PROPFIND
+        String principalUrl = resolvePrincipalUrl(basic);
+        log.info("[icloud] principal URL: {}", principalUrl);
 
-        String homeSet = propfindSingle(principalUrl, basic, "0",
+        // Step 2: calendar-home-set from principal
+        String homeSet = propfindHrefOrText(principalUrl, basic, "0",
                 """
                 <?xml version="1.0" encoding="utf-8" ?>
                 <D:propfind xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
                   <D:prop><C:calendar-home-set/></D:prop>
                 </D:propfind>
                 """, "urn:ietf:params:xml:ns:caldav", "calendar-home-set");
-        if (homeSet == null) throw new RuntimeException("calendar-home-set no encontrado");
+        if (homeSet == null) throw new RuntimeException("calendar-home-set no encontrado en " + principalUrl);
         String homeUrl = absolutize(principalUrl, homeSet);
+        log.info("[icloud] calendar home: {}", homeUrl);
 
+        // Step 3: list all VEVENT-capable calendars in home
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(homeUrl))
                 .header("Authorization", "Basic " + basic)
@@ -202,7 +198,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                         """, StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode());
+        if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode() + " listing home " + homeUrl);
 
         Document doc = parseXml(res.body());
         NodeList responses = doc.getElementsByTagNameNS("DAV:", "response");
@@ -242,22 +238,72 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     // -----------------------------------------------------------------------
+    // Principal resolution — tries .well-known first, then root PROPFIND
+    // iCloud requires authentication even on .well-known, so we try both.
+    // -----------------------------------------------------------------------
+    private String resolvePrincipalUrl(String basic) throws Exception {
+        // Try 1: RFC 6764 .well-known redirect
+        try {
+            HttpRequest wk = HttpRequest.newBuilder()
+                    .uri(URI.create("https://caldav.icloud.com/.well-known/caldav"))
+                    .header("Authorization", "Basic " + basic)
+                    .header("Depth", "0")
+                    .GET()
+                    .build();
+            HttpResponse<String> wkRes = http.send(wk, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            log.debug("[icloud] .well-known status: {}", wkRes.statusCode());
+            // A 301/302 that the HttpClient followed lands us on the user-specific principal URL
+            String finalUrl = wkRes.uri().toString();
+            if (!finalUrl.equals("https://caldav.icloud.com/.well-known/caldav")
+                    && !finalUrl.equals("https://caldav.icloud.com/")) {
+                log.info("[icloud] .well-known redirected to: {}", finalUrl);
+                return finalUrl;
+            }
+        } catch (Exception e) {
+            log.debug("[icloud] .well-known failed: {}", e.getMessage());
+        }
+
+        // Try 2: PROPFIND current-user-principal on root — value may be text or <href>
+        String principal = propfindHrefOrText("https://caldav.icloud.com/", basic, "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop><D:current-user-principal/></D:prop>
+                </D:propfind>
+                """, "DAV:", "current-user-principal");
+        if (principal != null) {
+            return absolutize("https://caldav.icloud.com/", principal);
+        }
+
+        // Try 3: PROPFIND principal-URL (older iCloud behaviour)
+        String principalUrl2 = propfindHrefOrText("https://caldav.icloud.com/", basic, "0",
+                """
+                <?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                  <D:prop><D:principal-URL/></D:prop>
+                </D:propfind>
+                """, "DAV:", "principal-URL");
+        if (principalUrl2 != null) {
+            return absolutize("https://caldav.icloud.com/", principalUrl2);
+        }
+
+        throw new RuntimeException(
+            "No se pudo obtener el principal de iCloud. " +
+            "Verifica que el apple-id (" + appleId + ") y la app-password sean correctos.");
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers internos
     // -----------------------------------------------------------------------
     private List<String> resolveAllUrls() {
-        // Si hay URL fija en config, úsala sola (comportamiento legacy)
         if (!calendarUrl.isBlank()) return List.of(calendarUrl);
-
-        // Si ya tenemos el discovery en caché, úsalo
         if (discoveredCalendars != null && !discoveredCalendars.isEmpty())
             return new ArrayList<>(discoveredCalendars.values());
-
-        // Auto-discover ahora
         try {
             Map<String, String> found = discoverCalendarsWithNames();
             return new ArrayList<>(found.values());
         } catch (Exception e) {
-            log.error("[icloud] auto-discovery failed: {}", e.getMessage());
+            log.error("[icloud] auto-discovery failed: {}", e.getMessage(), e);
             return List.of();
         }
     }
@@ -277,7 +323,50 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     }
 
     // -----------------------------------------------------------------------
-    // VEVENT parsing (sin cambios)
+    // propfindHrefOrText — reads href child OR text content of the target element.
+    // The original propfindSingle only checked for <href> children which
+    // broke when iCloud returns the value as direct text content.
+    // -----------------------------------------------------------------------
+    private String propfindHrefOrText(String url, String basic, String depth, String body,
+                                      String propNs, String propName) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Authorization", "Basic " + basic)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .header("Depth", depth)
+                .method("PROPFIND", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        log.debug("[icloud] PROPFIND {} ({}) -> HTTP {}", url, propName, res.statusCode());
+        if (res.statusCode() / 100 != 2) {
+            log.warn("[icloud] PROPFIND {} returned HTTP {} body: {}", url, res.statusCode(),
+                    res.body().length() > 500 ? res.body().substring(0, 500) : res.body());
+            throw new RuntimeException("PROPFIND " + url + " -> HTTP " + res.statusCode());
+        }
+
+        Document doc = parseXml(res.body());
+        NodeList target = doc.getElementsByTagNameNS(propNs, propName);
+        if (target.getLength() == 0) {
+            log.debug("[icloud] element <{}> not found in PROPFIND response for {}", propName, url);
+            return null;
+        }
+
+        Element elem = (Element) target.item(0);
+
+        // Prefer <DAV:href> child (standard)
+        NodeList hrefs = elem.getElementsByTagNameNS("DAV:", "href");
+        if (hrefs.getLength() > 0) {
+            String val = hrefs.item(0).getTextContent().trim();
+            if (!val.isBlank()) return val;
+        }
+
+        // Fallback: direct text content (some iCloud versions)
+        String text = elem.getTextContent().trim();
+        return text.isBlank() ? null : text;
+    }
+
+    // -----------------------------------------------------------------------
+    // VEVENT parsing
     // -----------------------------------------------------------------------
     private static final DateTimeFormatter ICS_DATETIME = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss");
     private static final DateTimeFormatter ICS_DATE     = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -390,26 +479,6 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     // -----------------------------------------------------------------------
     // CalDAV helpers
     // -----------------------------------------------------------------------
-    private String propfindSingle(String url, String basic, String depth, String body,
-                                  String propNs, String propName) throws Exception {
-        HttpRequest req = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Authorization", "Basic " + basic)
-                .header("Content-Type", "application/xml; charset=utf-8")
-                .header("Depth", depth)
-                .method("PROPFIND", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-        HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (res.statusCode() / 100 != 2)
-            throw new RuntimeException("PROPFIND " + url + " -> HTTP " + res.statusCode());
-        Document doc = parseXml(res.body());
-        NodeList target = doc.getElementsByTagNameNS(propNs, propName);
-        if (target.getLength() == 0) return null;
-        NodeList hrefs = ((Element) target.item(0)).getElementsByTagNameNS("DAV:", "href");
-        if (hrefs.getLength() == 0) return null;
-        return hrefs.item(0).getTextContent().trim();
-    }
-
     private static String absolutize(String base, String href) {
         if (href.startsWith("http://") || href.startsWith("https://")) return href;
         URI b = URI.create(base);
