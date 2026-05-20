@@ -35,6 +35,24 @@ public class SyncController {
         );
     }
 
+    /** Lista los calendarios iCloud descubiertos (para el selector del cliente). */
+    @GetMapping("/icloud/calendars")
+    public List<Map<String, String>> icloudCalendars() {
+        try {
+            return icloud.discoverCalendarsWithMeta().stream()
+                    .map(c -> {
+                        Map<String, String> m = new java.util.LinkedHashMap<>();
+                        m.put("name", c.name());
+                        m.put("url",  c.url());
+                        if (c.color() != null) m.put("color", c.color());
+                        return m;
+                    })
+                    .toList();
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "iCloud discovery failed: " + e.getMessage());
+        }
+    }
+
     @GetMapping("/status")
     public Map<String, Object> status(Authentication auth) {
         return Map.of(
@@ -54,13 +72,6 @@ public class SyncController {
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be pull|push|full");
         };
     }
-
-    // ── NUEVO ──────────────────────────────────────────────────────────────
-    @GetMapping("/icloud/calendars")
-    public Map<String, String> icloudCalendars() throws Exception {
-        return icloud.discoverCalendarsWithNames();
-    }
-    // ───────────────────────────────────────────────────────────────────────
 
     @GetMapping("/oauth-success")
     public ResponseEntity<String> oauthSuccess() {

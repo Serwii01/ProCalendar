@@ -1,5 +1,8 @@
 package com.procalendar.event;
 
+import com.procalendar.sync.icloud.ICloudCalDavSyncService;
+import com.procalendar.todo.Todo;
+import com.procalendar.todo.TodoRepository;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -16,9 +19,28 @@ import java.util.List;
 public class CalendarEventController {
 
     private final CalendarEventRepository repository;
+    private final ICloudCalDavSyncService icloud;
+    private final TodoRepository todoRepo;
 
-    public CalendarEventController(CalendarEventRepository repository) {
+    public CalendarEventController(CalendarEventRepository repository,
+                                   ICloudCalDavSyncService icloud,
+                                   TodoRepository todoRepo) {
         this.repository = repository;
+        this.icloud = icloud;
+        this.todoRepo = todoRepo;
+    }
+
+    /** Crea una tarea (Todo) a partir de un evento existente. */
+    @PostMapping("/{id}/to-todo")
+    public Todo convertToTodo(@PathVariable Long id) {
+        CalendarEvent ev = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Event not found"));
+        Todo t = new Todo();
+        t.setTitle(ev.getTitle());
+        t.setNotes(ev.getDescription());
+        t.setDueAt(ev.getStartAt());
+        t.setPriority(Todo.Priority.MEDIUM);
+        return todoRepo.save(t);
     }
 
     /**
@@ -55,6 +77,7 @@ public class CalendarEventController {
     public CalendarEvent create(@Valid @RequestBody CalendarEvent event) {
         event.setId(null);
         normalize(event);
+        event.setDirty(true);   // marked for push on next sync
         return repository.save(event);
     }
 
@@ -70,18 +93,35 @@ public class CalendarEventController {
         existing.setEndAt(payload.getEndAt());
         existing.setAllDay(payload.isAllDay());
         existing.setColor(payload.getColor());
-        // Source/externalId are only touched by sync flows, not by manual edits.
+        // Allow the user to assign / move events between iCloud calendars before sync.
+        if (payload.getExternalCalendarId() != null) existing.setExternalCalendarId(payload.getExternalCalendarId());
+        if (payload.getCalendarName()       != null) existing.setCalendarName(payload.getCalendarName());
+        // Source/externalId/externalResourceUrl are only touched by sync flows.
         normalize(existing);
+        existing.setDirty(true);   // local edit → needs push on next sync
         return repository.save(existing);
     }
 
+    /**
+     * Borra el evento local. Si cascade=true y el evento procede de iCloud,
+     * también se borra el .ics remoto antes de la eliminación local.
+     */
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
-        if (!repository.existsById(id)) {
-            return ResponseEntity.notFound().build();
+    public ResponseEntity<?> delete(@PathVariable Long id,
+                                    @RequestParam(defaultValue = "false") boolean cascade) {
+        CalendarEvent ev = repository.findById(id).orElse(null);
+        if (ev == null) return ResponseEntity.notFound().build();
+
+        boolean remoteDeleted = false;
+        if (cascade && ev.getSource() == CalendarEvent.Source.ICLOUD) {
+            remoteDeleted = icloud.deleteRemote(ev);
+            if (!remoteDeleted) {
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body("No se pudo borrar de iCloud (revisa logs). El evento NO se ha borrado local.");
+            }
         }
         repository.deleteById(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok().body(java.util.Map.of("deleted", true, "remoteDeleted", remoteDeleted));
     }
 
     private void normalize(CalendarEvent e) {

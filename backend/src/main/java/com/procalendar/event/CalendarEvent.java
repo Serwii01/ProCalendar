@@ -52,7 +52,19 @@ public class CalendarEvent {
     @Column(length = 255)
     private String externalCalendarId;
 
+    /** Full URL of the .ics resource on iCloud (needed for DELETE/PUT). */
+    @Column(length = 500)
+    private String externalResourceUrl;
+
+    /** Human-readable name of the source calendar (e.g. "Trabajo", "Estudios"). */
+    @Column(length = 120)
+    private String calendarName;
+
     private LocalDateTime lastSyncedAt;
+
+    /** True if the event has local changes pending push to its remote calendar. */
+    @Column(nullable = false)
+    private boolean dirty = false;
 
     @Version
     private Long version;
@@ -92,8 +104,17 @@ public class CalendarEvent {
     public String getExternalCalendarId() { return externalCalendarId; }
     public void setExternalCalendarId(String externalCalendarId) { this.externalCalendarId = externalCalendarId; }
 
+    public String getExternalResourceUrl() { return externalResourceUrl; }
+    public void setExternalResourceUrl(String externalResourceUrl) { this.externalResourceUrl = externalResourceUrl; }
+
+    public String getCalendarName() { return calendarName; }
+    public void setCalendarName(String calendarName) { this.calendarName = calendarName; }
+
     public LocalDateTime getLastSyncedAt() { return lastSyncedAt; }
     public void setLastSyncedAt(LocalDateTime lastSyncedAt) { this.lastSyncedAt = lastSyncedAt; }
+
+    public boolean isDirty() { return dirty; }
+    public void setDirty(boolean dirty) { this.dirty = dirty; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }

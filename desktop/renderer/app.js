@@ -1,12 +1,22 @@
 // =============================================================================
 //  Pro Calendar - renderer
-//  Vista Semana / Mes / Día estilo ChronosFlow, modal de evento,
-//  sincronización con Google e iCloud.
+//  Vista Semana / Mes / Día, modal de evento, sync Google/iCloud,
+//  toasts y pickers personalizados.
 // =============================================================================
-const API_BASE   = 'http://localhost:8080/api';
-const API_EVENTS = `${API_BASE}/events`;
-const API_TODOS  = `${API_BASE}/todos`;
-const API_SYNC   = `${API_BASE}/sync`;
+// Defensive load from window.UI (set by ui.js). Fallback to native primitives
+// so the rest of the app still works if ui.js fails for any reason.
+const _UI = window.UI || {};
+const toast            = _UI.toast            || ((m, k) => console.log(`[${k||'info'}] ${m}`));
+const confirmDialog    = _UI.confirmDialog    || (({message}) => Promise.resolve(window.confirm(message || '¿Confirmar?')));
+const attachDatePicker = _UI.attachDatePicker || ((el) => { el.textContent = 'YYYY-MM-DD'; return { value: '' }; });
+const attachTimePicker = _UI.attachTimePicker || ((el) => { el.textContent = '09:00';      return { value: '09:00' }; });
+if (!window.UI) console.error('[boot] window.UI no está definido — revisa ui.js');
+
+const API_BASE     = 'http://localhost:8080/api';
+const API_EVENTS   = `${API_BASE}/events`;
+const API_TODOS    = `${API_BASE}/todos`;
+const API_SYNC     = `${API_BASE}/sync`;
+const API_SETTINGS = `${API_BASE}/settings`;
 
 const DAY_NAMES   = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 const DAY_NAMES_L = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
@@ -32,15 +42,19 @@ const DAY_HOUR_END   = 24;
 // State
 // ---------------------------------------------------------------------------
 const state = {
-  view: 'week',                  // 'day' | 'week' | 'month'
-  cursorDate: new Date(),        // anclaje temporal (un día dentro de la semana/mes)
+  view: 'week',
+  cursorDate: new Date(),
   events: [],
   todos: [],
+  icloudCalendars: [],
   editingId: null,
   selectedColor: COLORS[0].value,
-  filterSource: 'all',           // 'all' | 'LOCAL' | 'GOOGLE' | 'ICLOUD'
+  filterSource: 'all',
   search: '',
 };
+
+// Pickers (initialized after DOMContentLoaded)
+const pickers = { startDate: null, startTime: null, endDate: null, endTime: null, allDayDate: null };
 
 // ---------------------------------------------------------------------------
 // Date helpers
@@ -159,6 +173,27 @@ async function loadEvents() {
 async function loadTodos() {
   try { state.todos = await api(API_TODOS); }
   catch (e) { console.error(e); state.todos = []; }
+}
+
+async function loadIcloudCalendars() {
+  try {
+    state.icloudCalendars = await api(`${API_SYNC}/icloud/calendars`);
+    populateCalendarSelect();
+  } catch (e) {
+    console.warn('No se pudieron obtener calendarios iCloud:', e.message);
+    state.icloudCalendars = [];
+  }
+}
+
+function populateCalendarSelect() {
+  const sel = document.getElementById('cal-target');
+  if (!sel) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">— Solo local (sin sincronizar) —</option>'
+    + state.icloudCalendars.map(c =>
+        `<option value="${escapeHtml(c.url)}" data-name="${escapeHtml(c.name)}" data-color="${escapeHtml(c.color || '')}">${escapeHtml(c.name)}</option>`
+      ).join('');
+  if (current) sel.value = current;
 }
 
 function visibleEvents() {
@@ -349,8 +384,11 @@ function buildPositionedEventCard(ev, day) {
   card.style.height = `${height}px`;
   card.style.background = chipBg(ev);
   card.style.color      = chipFg(ev);
+  const calBadge = ev.calendarName
+      ? `<span style="display:inline-block;padding:1px 6px;border-radius:6px;background:rgba(255,255,255,.22);font-size:10px;font-weight:600;margin-left:4px">${escapeHtml(ev.calendarName)}</span>`
+      : '';
   card.innerHTML = `
-    <div class="ev-title">${escapeHtml(ev.title)}</div>
+    <div class="ev-title">${escapeHtml(ev.title)}${calBadge}</div>
     <div class="ev-meta">${fmtHM(start)} – ${fmtHM(end)}${ev.location ? ' · ' + escapeHtml(ev.location) : ''}</div>
   `;
   return card;
@@ -482,21 +520,23 @@ function renderRightPanel() {
 
   const list = document.getElementById('todo-list');
   if (state.todos.length === 0) {
-    list.innerHTML = `<div class="empty-card">No hay tareas. ¡A descansar! 🌿</div>`;
+    list.innerHTML = `<div class="empty-card">Sin tareas</div>`;
     return;
   }
+  const checkSvg = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+  const trashSvg = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`;
   list.innerHTML = state.todos.map(t => `
     <div class="todo-row ${t.done ? 'done' : ''}" data-id="${t.id}">
-      <span class="todo-checkbox ${t.done ? 'checked' : ''}" data-action="toggle">${t.done ? '✓' : ''}</span>
+      <span class="todo-checkbox ${t.done ? 'checked' : ''}" data-action="toggle">${checkSvg}</span>
       <div class="todo-content">
         <div class="todo-title">${escapeHtml(t.title)}</div>
         <div class="todo-meta">
-          <span class="priority-pill ${t.priority}" style="font-size:10px">${t.priority}</span>
-          ${t.dueAt ? ` · ${formatDueLabel(t.dueAt)}` : ''}
+          <span class="priority-pill ${t.priority}">${t.priority}</span>
+          ${t.dueAt ? `<span>${formatDueLabel(t.dueAt)}</span>` : ''}
         </div>
       </div>
       <div class="todo-actions">
-        <button class="todo-delete" data-action="delete" title="Borrar">✕</button>
+        <button class="todo-delete" data-action="delete" title="Borrar">${trashSvg}</button>
       </div>
     </div>
   `).join('');
@@ -547,20 +587,34 @@ function renderBottomPanels() {
             </div>
             <div class="deadline-meta">
               <div class="dm-title">${escapeHtml(e.title)}</div>
-              <div class="dm-sub">${e.allDay ? 'Todo el día' : fmtHM(s)}${e.location ? ' · ' + escapeHtml(e.location) : ''}</div>
+              <div class="dm-sub">${e.allDay ? 'Todo el día' : fmtHM(s)}${e.location ? ' · ' + escapeHtml(e.location) : ''}${e.calendarName ? ' · ' + escapeHtml(e.calendarName) : ''}</div>
             </div>
           </div>`;
         }).join('');
 
-  // Weekly goal — % de tareas completadas esta semana
-  const total = state.todos.length;
-  const done  = state.todos.filter(t => t.done).length;
-  const pct = total === 0 ? 0 : Math.round(done / total * 100);
-  document.getElementById('panel-goal-text').textContent =
-      total === 0
-          ? 'Añade tareas para ver tu progreso'
-          : `Completa todas tus ${total} tareas esta semana.`;
-  document.getElementById('panel-progress').style.width = `${pct}%`;
+  // Esta semana — métricas reales
+  const stats = document.getElementById('panel-stats');
+  if (stats) {
+    const totalEvents = state.events.length;
+    const totalTodos  = state.todos.length;
+    const doneTodos   = state.todos.filter(t => t.done).length;
+    // Horas ocupadas (eventos no all-day en la semana visible)
+    let busyMin = 0;
+    state.events.forEach(e => {
+      if (e.allDay) return;
+      const s = parseLocal(e.startAt), en = parseLocal(e.endAt);
+      if (s && en) busyMin += Math.max(0, (en - s) / 60000);
+    });
+    const busyH = (busyMin / 60).toFixed(1);
+    const byCal = state.events.reduce((m, e) => { const k = e.calendarName || e.source || 'Local'; m[k] = (m[k]||0)+1; return m; }, {});
+    const topCal = Object.entries(byCal).sort((a,b) => b[1]-a[1])[0];
+    stats.innerHTML = `
+      <div class="stat"><div class="stat-label">Eventos</div><div class="stat-value">${totalEvents}</div></div>
+      <div class="stat"><div class="stat-label">Horas ocupadas</div><div class="stat-value">${busyH}h</div></div>
+      <div class="stat"><div class="stat-label">Tareas</div><div class="stat-value">${doneTodos}/${totalTodos}</div></div>
+      <div class="stat"><div class="stat-label">Top calendario</div><div class="stat-value" style="font-size:13px;font-weight:500">${topCal ? escapeHtml(topCal[0]) : '—'}</div><div class="stat-sub">${topCal ? topCal[1] + ' eventos' : ''}</div></div>
+    `;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -572,9 +626,11 @@ function openModalForNew(day, hour = null, allDay = false) {
   if (hour !== null) start.setHours(hour, 0, 0, 0);
   else start.setHours(9, 0, 0, 0);
   const end = new Date(start); end.setHours(start.getHours() + 1);
-  document.getElementById('inicio').value = toLocalIso(start);
-  document.getElementById('fin').value    = toLocalIso(end);
-  document.getElementById('dia').value    = toLocalDate(day);
+  pickers.startDate.value = toLocalDate(start);
+  pickers.startTime.value = fmtHM(start);
+  pickers.endDate.value   = toLocalDate(end);
+  pickers.endTime.value   = fmtHM(end);
+  pickers.allDayDate.value = toLocalDate(day);
   document.getElementById('all-day').checked = allDay;
   toggleAllDayInputs(allDay);
   showModal();
@@ -594,15 +650,24 @@ function openModalForEdit(id) {
   document.getElementById('all-day').checked   = !!ev.allDay;
   toggleAllDayInputs(!!ev.allDay);
   if (ev.startAt) {
-    document.getElementById('inicio').value = toLocalIso(parseLocal(ev.startAt));
-    document.getElementById('dia').value    = toLocalDate(parseLocal(ev.startAt));
+    const s = parseLocal(ev.startAt);
+    pickers.startDate.value  = toLocalDate(s);
+    pickers.startTime.value  = fmtHM(s);
+    pickers.allDayDate.value = toLocalDate(s);
   }
   if (ev.endAt) {
-    document.getElementById('fin').value = toLocalIso(parseLocal(ev.endAt));
+    const e = parseLocal(ev.endAt);
+    pickers.endDate.value = toLocalDate(e);
+    pickers.endTime.value = fmtHM(e);
   }
   state.selectedColor = ev.color || COLORS[0].value;
   renderColorPicker();
-  document.getElementById('btn-borrar').style.display = (ev.source && ev.source !== 'LOCAL') ? 'none' : 'inline-flex';
+  // Preselect the iCloud calendar this event belongs to (if any).
+  const sel = document.getElementById('cal-target');
+  if (sel) sel.value = ev.externalCalendarId || '';
+  // Allow deletion of any event (local or remote). For remote we ask cascade.
+  document.getElementById('btn-borrar').style.display = 'inline-flex';
+  document.getElementById('btn-to-todo').style.display = 'inline-flex';
   showModal();
 }
 
@@ -611,10 +676,17 @@ function hideModal() { document.getElementById('modal-event').classList.remove('
 
 function resetForm() {
   state.editingId = null;
-  document.getElementById('modal-title-text').textContent = 'Crear nuevo evento';
-  document.getElementById('form-evento').reset();
+  document.getElementById('modal-title-text').textContent = 'Nuevo evento';
+  document.getElementById('titulo').value = '';
+  document.getElementById('ubicacion').value = '';
+  document.getElementById('descripcion').value = '';
+  document.getElementById('all-day').checked = false;
   document.getElementById('evento-id').value = '';
   document.getElementById('btn-borrar').style.display = 'none';
+  const btnToTodo = document.getElementById('btn-to-todo');
+  if (btnToTodo) btnToTodo.style.display = 'none';
+  const sel = document.getElementById('cal-target');
+  if (sel) sel.value = '';
   state.selectedColor = COLORS[0].value;
   renderColorPicker();
   toggleAllDayInputs(false);
@@ -646,16 +718,26 @@ function readFormPayload() {
 
   let startAt, endAt;
   if (allDay) {
-    const dia = document.getElementById('dia').value;
+    const dia = pickers.allDayDate.value;
     if (!dia) throw new Error('Selecciona un día');
     startAt = `${dia}T00:00:00`;
     endAt   = `${dia}T23:59:00`;
   } else {
-    startAt = document.getElementById('inicio').value;
-    endAt   = document.getElementById('fin').value;
-    if (!startAt || !endAt) throw new Error('Indica inicio y fin');
+    const sd = pickers.startDate.value, st = pickers.startTime.value;
+    const ed = pickers.endDate.value,   et = pickers.endTime.value;
+    if (!sd || !st || !ed || !et) throw new Error('Indica inicio y fin');
+    startAt = `${sd}T${st}:00`;
+    endAt   = `${ed}T${et}:00`;
     if (new Date(endAt) <= new Date(startAt)) throw new Error('Fin debe ser posterior al inicio');
   }
+
+  // Calendario destino iCloud (opcional). Si se elige, el evento se enviará a
+  // ese calendario en el próximo Sincronizar iCloud.
+  const sel = document.getElementById('cal-target');
+  const targetUrl  = sel ? sel.value : '';
+  const targetName = sel && sel.selectedOptions[0]
+      ? sel.selectedOptions[0].dataset.name || null
+      : null;
 
   return {
     title,
@@ -663,6 +745,8 @@ function readFormPayload() {
     description: document.getElementById('descripcion').value.trim(),
     startAt, endAt, allDay,
     color: state.selectedColor,
+    externalCalendarId: targetUrl || null,
+    calendarName: targetName,
   };
 }
 
@@ -671,22 +755,51 @@ async function saveEvent() {
     const payload = readFormPayload();
     if (state.editingId) {
       await api(`${API_EVENTS}/${state.editingId}`, { method: 'PUT', body: JSON.stringify(payload) });
+      toast('Evento actualizado', 'ok');
     } else {
       await api(API_EVENTS, { method: 'POST', body: JSON.stringify(payload) });
+      toast('Evento creado', 'ok');
     }
     hideModal();
     await refreshAll();
   } catch (err) {
-    alert(err.message);
+    toast(err.message, 'err');
   }
 }
 
 async function deleteEvent() {
   if (!state.editingId) return;
-  if (!confirm('¿Borrar este evento?')) return;
-  await api(`${API_EVENTS}/${state.editingId}`, { method: 'DELETE' });
-  hideModal();
-  await refreshAll();
+  const ev = state.events.find(e => e.id === state.editingId);
+  let cascade = false;
+
+  if (ev && ev.source === 'ICLOUD') {
+    const ok = await confirmDialog({
+      title: 'Borrar evento de iCloud',
+      message: `Este evento pertenece a iCloud${ev.calendarName ? ' · ' + ev.calendarName : ''}.\n\nSe borrará también en tu iPhone tras la próxima sincronización.`,
+      confirmText: 'Borrar en iCloud',
+      cancelText: 'Cancelar',
+      danger: true,
+    });
+    if (!ok) return;
+    cascade = true;
+  } else {
+    const ok = await confirmDialog({
+      title: '¿Borrar este evento?',
+      message: 'Esta acción no se puede deshacer.',
+      confirmText: 'Borrar',
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
+  try {
+    await api(`${API_EVENTS}/${state.editingId}?cascade=${cascade}`, { method: 'DELETE' });
+    hideModal();
+    await refreshAll();
+    toast('Evento borrado', 'ok');
+  } catch (err) {
+    toast('No se pudo borrar: ' + err.message, 'err');
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -732,14 +845,32 @@ function setStatus(msg, kind = 'busy') {
 }
 
 async function syncProvider(provider) {
-  setStatus(`Sincronizando con ${provider}…`, 'busy');
+  setStatus('Sincronizando…', 'busy');
   try {
     const r = await api(`${API_SYNC}/${provider}?mode=full`, { method: 'POST' });
-    setStatus(`${provider}: ↓${r.imported}  ✎${r.updated}  ⨯${r.deleted}  (${r.message})`, 'ok');
+    const errish = (r.message || '').toLowerCase();
+    const hasError = errish.includes('error') || errish.includes('fail');
+    if (hasError) {
+      setStatus('Error en la sincronización', 'err');
+    } else {
+      setStatus('Sincronizado', 'ok');
+    }
+    if (provider === 'icloud') await loadIcloudCalendars();
     await refreshAll();
   } catch (err) {
-    setStatus(`${provider}: ${err.message}`, 'err');
+    setStatus('Error en la sincronización', 'err');
   }
+}
+
+async function syncAll() {
+  setStatus('Sincronizando…', 'busy');
+  try {
+    const r = await api(`${API_SYNC}/icloud?mode=full`, { method: 'POST' });
+    await loadIcloudCalendars();
+    setStatus(r.message?.toLowerCase().includes('error') ? 'Error en la sincronización' : 'Sincronizado',
+              r.message?.toLowerCase().includes('error') ? 'err' : 'ok');
+    await refreshAll();
+  } catch (err) { setStatus('Error en la sincronización', 'err'); }
 }
 
 function startGoogleOAuth() {
@@ -790,7 +921,12 @@ async function refreshTodos() {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
+function boot() {
+  // Wrap each wiring step so a single failure doesn't abort the rest.
+  const safe = (label, fn) => { try { fn(); } catch (e) { console.error(`[boot:${label}]`, e); } };
+  safe('main', () => mainInit());
+}
+function mainInit() {
   // View tabs
   document.querySelectorAll('.view-tab').forEach(t =>
       t.addEventListener('click', () => setView(t.dataset.view)));
@@ -839,13 +975,249 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Sync
-  document.getElementById('btn-sync-google').addEventListener('click', () => syncProvider('google'));
+  document.getElementById('btn-sync-google')?.addEventListener('click', () => syncProvider('google'));
   document.getElementById('btn-sync-icloud').addEventListener('click', () => syncProvider('icloud'));
-  document.getElementById('btn-login-google').addEventListener('click', startGoogleOAuth);
+  document.getElementById('btn-login-google')?.addEventListener('click', startGoogleOAuth);
+
+  // Pickers
+  pickers.startDate  = attachDatePicker(document.getElementById('pick-start-date'));
+  pickers.startTime  = attachTimePicker(document.getElementById('pick-start-time'));
+  pickers.endDate    = attachDatePicker(document.getElementById('pick-end-date'));
+  pickers.endTime    = attachTimePicker(document.getElementById('pick-end-time'));
+  pickers.allDayDate = attachDatePicker(document.getElementById('pick-allday-date'));
 
   renderColorPicker();
+  loadIcloudCalendars();
   refreshAll();
 
   // Refresh now-line periodically
   setInterval(() => { if (state.view === 'week' || state.view === 'day') renderCurrentView(); }, 60_000);
-});
+
+  // ---------- Tema ----------
+  applyTheme(localStorage.getItem('theme') || 'auto');
+
+  // ---------- Switch Calendar / Tasks view ----------
+  document.querySelectorAll('[data-section]').forEach(el => el.addEventListener('click', () => {
+    document.querySelectorAll('[data-section]').forEach(x => x.classList.toggle('active', x === el));
+    const isTasks = el.dataset.section === 'tasks';
+    document.getElementById('view-tasks').style.display = isTasks ? 'flex' : 'none';
+    document.getElementById('view-week').style.display  = isTasks ? 'none' : (state.view==='week' ? 'flex' : 'none');
+    document.getElementById('view-month').style.display = isTasks ? 'none' : (state.view==='month'? 'flex' : 'none');
+    document.getElementById('view-day').style.display   = isTasks ? 'none' : (state.view==='day'  ? 'flex' : 'none');
+    document.querySelector('.bottom-panels').style.display = isTasks ? 'none' : 'grid';
+    document.querySelector('.title-row').style.display = isTasks ? 'none' : 'flex';
+    if (isTasks) renderTasksView();
+  }));
+
+  // ---------- Settings modal ----------
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-settings-close').addEventListener('click', () => hideSettings());
+  document.getElementById('btn-settings-cancel').addEventListener('click', () => hideSettings());
+  document.getElementById('btn-settings-save').addEventListener('click', saveSettings);
+  document.getElementById('modal-settings').addEventListener('click', e => {
+    if (e.target.id === 'modal-settings') hideSettings();
+  });
+  document.querySelectorAll('#settings-tabs .tab').forEach(t => t.addEventListener('click', () => {
+    document.querySelectorAll('#settings-tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.tab-pane').forEach(p => p.hidden = p.dataset.pane !== t.dataset.tab);
+  }));
+  document.querySelectorAll('#theme-segmented button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#theme-segmented button').forEach(x => x.classList.toggle('active', x === b));
+    applyTheme(b.dataset.theme);
+  }));
+  document.getElementById('btn-google-connect').addEventListener('click', startGoogleOAuth);
+
+  // ---------- Sync button (sidebar) ----------
+  document.getElementById('btn-sync-icloud').addEventListener('click', syncAll);
+
+  // ---------- Tasks view form ----------
+  document.getElementById('form-todo-main').addEventListener('submit', async e => {
+    e.preventDefault();
+    const title = document.getElementById('todo-titulo-main').value.trim();
+    if (!title) return;
+    const priority = document.getElementById('todo-prioridad-main').value;
+    const due      = document.getElementById('todo-due-main').value;
+    const payload  = { title, priority };
+    if (due) payload.dueAt = `${due}T09:00:00`;
+    await api(API_TODOS, { method: 'POST', body: JSON.stringify(payload) });
+    document.getElementById('todo-titulo-main').value = '';
+    document.getElementById('todo-due-main').value    = '';
+    await refreshTodos();
+    renderTasksView();
+  });
+  document.querySelectorAll('[data-list]').forEach(el => el.addEventListener('click', () => {
+    document.querySelectorAll('[data-list]').forEach(x => x.classList.toggle('active', x === el));
+    state.taskFilter = el.dataset.list;
+    renderTasksView();
+  }));
+
+  // ---------- Convert event → todo ----------
+  document.getElementById('btn-to-todo').addEventListener('click', async () => {
+    if (!state.editingId) return;
+    try {
+      await api(`${API_EVENTS}/${state.editingId}/to-todo`, { method: 'POST' });
+      toast('Tarea creada desde el evento', 'ok');
+      await refreshTodos();
+    } catch (err) { toast('No se pudo crear la tarea: ' + err.message, 'err'); }
+  });
+}
+
+// Boot: arrancar inmediatamente si el DOM ya está listo, o esperar a DOMContentLoaded.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot);
+} else {
+  boot();
+}
+
+// =============================================================================
+//  Tasks view rendering
+// =============================================================================
+function renderTasksView() {
+  const list  = document.getElementById('tasks-list-main');
+  const title = document.getElementById('tasks-list-title');
+  const count = document.getElementById('tasks-count');
+  if (!list) return;
+
+  const filter = state.taskFilter || 'all';
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate()+1);
+
+  let items = state.todos.slice();
+  if (filter === 'today')    items = items.filter(t => t.dueAt && new Date(t.dueAt) >= today && new Date(t.dueAt) < tomorrow);
+  if (filter === 'upcoming') items = items.filter(t => !t.done && (!t.dueAt || new Date(t.dueAt) >= today));
+  if (filter === 'done')     items = items.filter(t => t.done);
+
+  title.textContent = { all:'Todas las tareas', today:'Hoy', upcoming:'Próximas', done:'Completadas' }[filter];
+  count.textContent = `${items.length} tarea${items.length===1?'':'s'}`;
+
+  if (items.length === 0) {
+    list.innerHTML = `<div class="empty-card">Sin tareas en esta lista</div>`;
+    return;
+  }
+  const checkSvg = `<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+  list.innerHTML = items.map(t => `
+    <div class="todo-row ${t.done ? 'done' : ''}" data-id="${t.id}">
+      <span class="todo-checkbox ${t.done ? 'checked' : ''}" data-action="toggle">${checkSvg}</span>
+      <div class="todo-content">
+        <div class="todo-title">${escapeHtml(t.title)}</div>
+        <div class="todo-meta">
+          <span class="priority-pill ${t.priority}">${t.priority}</span>
+          ${t.dueAt ? `<span>${formatDueLabel(t.dueAt)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('.todo-row').forEach(row => {
+    row.addEventListener('click', async e => {
+      const id = Number(row.dataset.id);
+      if (e.target.dataset.action === 'toggle') {
+        await api(`${API_TODOS}/${id}/toggle`, { method: 'POST' });
+        await refreshTodos();
+        renderTasksView();
+      } else {
+        renderTaskDetail(id);
+      }
+    });
+  });
+}
+
+function renderTaskDetail(id) {
+  const t = state.todos.find(x => x.id === id);
+  const det = document.getElementById('tasks-detail');
+  if (!t || !det) return;
+  det.innerHTML = `
+    <h3 style="margin:0 0 12px;font-size:16px;font-weight:600">${escapeHtml(t.title)}</h3>
+    <div class="task-detail-field">
+      <div class="field-label">Estado</div>
+      <div>${t.done ? 'Completada' : 'Pendiente'}</div>
+    </div>
+    <div class="task-detail-field">
+      <div class="field-label">Prioridad</div>
+      <div><span class="priority-pill ${t.priority}">${t.priority}</span></div>
+    </div>
+    ${t.dueAt ? `<div class="task-detail-field"><div class="field-label">Vence</div><div>${formatDueLabel(t.dueAt)}</div></div>` : ''}
+    ${t.notes ? `<div class="task-detail-field"><div class="field-label">Notas</div><div style="font-size:13px;line-height:1.5">${escapeHtml(t.notes)}</div></div>` : ''}
+    <button class="btn danger btn-sm" id="td-delete" style="margin-top:12px">Borrar</button>
+  `;
+  document.getElementById('td-delete').addEventListener('click', async () => {
+    const ok = await confirmDialog({ title:'Borrar tarea', message:t.title, confirmText:'Borrar', danger:true });
+    if (!ok) return;
+    await api(`${API_TODOS}/${id}`, { method:'DELETE' });
+    await refreshTodos();
+    renderTasksView();
+    det.innerHTML = `<div class="empty-card">Selecciona una tarea para ver detalles</div>`;
+  });
+}
+
+// =============================================================================
+//  Theme
+// =============================================================================
+function applyTheme(t) {
+  localStorage.setItem('theme', t);
+  if (t === 'auto') {
+    const dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  } else {
+    document.documentElement.dataset.theme = t;
+  }
+  document.querySelectorAll('#theme-segmented button').forEach(b =>
+    b.classList.toggle('active', b.dataset.theme === t));
+}
+
+// =============================================================================
+//  Settings modal
+// =============================================================================
+async function openSettings() {
+  try {
+    const s = await api(API_SETTINGS);
+    document.getElementById('s-icloud-id').value      = s['icloud.appleId']     || '';
+    document.getElementById('s-icloud-pwd').value     = s['icloud.appPassword'] || '';
+    document.getElementById('s-icloud-url').value     = s['icloud.calendarUrl'] || '';
+    document.getElementById('s-icloud-enabled').checked = s['icloud.enabled'] === 'true';
+    document.getElementById('s-google-id').value      = s['google.clientId']    || '';
+    document.getElementById('s-google-secret').value  = s['google.clientSecret']|| '';
+    document.getElementById('s-google-enabled').checked = s['google.enabled'] === 'true';
+    document.getElementById('s-autosync-enabled').checked = s['sync.autoEnabled'] !== 'false';
+    document.getElementById('s-autosync-minutes').value   = s['sync.autoMinutes'] || '5';
+  } catch (e) { /* settings empty on first run */ }
+  document.getElementById('modal-settings').classList.add('show');
+}
+function hideSettings() { document.getElementById('modal-settings').classList.remove('show'); }
+
+async function saveSettings() {
+  const patch = {
+    'icloud.appleId':       document.getElementById('s-icloud-id').value.trim(),
+    'icloud.appPassword':   document.getElementById('s-icloud-pwd').value,
+    'icloud.calendarUrl':   document.getElementById('s-icloud-url').value.trim(),
+    'icloud.enabled':       String(document.getElementById('s-icloud-enabled').checked),
+    'google.clientId':      document.getElementById('s-google-id').value.trim(),
+    'google.clientSecret':  document.getElementById('s-google-secret').value,
+    'google.enabled':       String(document.getElementById('s-google-enabled').checked),
+    'sync.autoEnabled':     String(document.getElementById('s-autosync-enabled').checked),
+    'sync.autoMinutes':     document.getElementById('s-autosync-minutes').value,
+  };
+  try {
+    await api(API_SETTINGS, { method: 'PUT', body: JSON.stringify(patch) });
+    toast('Ajustes guardados', 'ok');
+    hideSettings();
+  } catch (err) { toast('Error al guardar: ' + err.message, 'err'); }
+}
+ssList.remove('show'); }
+async function saveSettings() {
+  const patch = {
+    'icloud.appleId':       document.getElementById('s-icloud-id').value.trim(),
+    'icloud.appPassword':   document.getElementById('s-icloud-pwd').value,
+    'icloud.calendarUrl':   document.getElementById('s-icloud-url').value.trim(),
+    'icloud.enabled':       String(document.getElementById('s-icloud-enabled').checked),
+    'google.clientId':      document.getElementById('s-google-id').value.trim(),
+    'google.clientSecret':  document.getElementById('s-google-secret').value,
+    'google.enabled':       String(document.getElementById('s-google-enabled').checked),
+    'sync.autoEnabled':     String(document.getElementById('s-autosync-enabled').checked),
+    'sync.autoMinutes':     document.getElementById('s-autosync-minutes').value,
+  };
+  try { await api(API_SETTINGS, { method:'PUT', body: JSON.stringify(patch) }); toast('Ajustes guardados', 'ok'); hideSettings(); }
+  catch (err) { toast('Error al guardar: ' + err.message, 'err'); }
+}
+, 'err'); }
+}
