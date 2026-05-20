@@ -3,6 +3,7 @@ package com.procalendar.sync;
 import com.procalendar.sync.google.GoogleCalendarSyncService;
 import com.procalendar.sync.icloud.ICloudCalDavSyncService;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.user.OAuth2User;
@@ -62,12 +63,13 @@ public class SyncController {
     // ───────────────────────────────────────────────────────────────────────
 
     @GetMapping("/oauth-success")
-    public RedirectView oauthSuccess(@AuthenticationPrincipal OAuth2User principal,
-                                     Authentication auth) {
-        if (principal != null && auth != null) {
-            google.rememberPrincipal(auth.getName());
-        }
-        return new RedirectView("/api/sync/oauth-done");
+    public ResponseEntity<String> oauthSuccess() {
+        return ResponseEntity.ok("""
+        <html><body style="font-family:sans-serif;text-align:center;padding:60px">
+          <h2>✅ Login con Google completado</h2>
+          <p>Puedes cerrar esta ventana y volver a ProCalendar.</p>
+        </body></html>
+        """);
     }
 
     @GetMapping(value = "/oauth-done", produces = "text/html")

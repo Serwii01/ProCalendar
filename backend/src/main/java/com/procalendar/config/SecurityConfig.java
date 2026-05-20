@@ -1,23 +1,26 @@
 package com.procalendar.config;
 
+import com.procalendar.sync.google.GoogleTokenStore;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 
-/**
- * Permissive security: the API is local-only (localhost) and the OAuth2 endpoints
- * are kept available so /oauth2/authorization/google can boot the Google login flow
- * for sync purposes. Anything that isn't an OAuth login is open — the desktop
- * client is the only consumer.
- */
 @Configuration
 public class SecurityConfig {
+
+    private final GoogleTokenStore tokenStore;
+
+    public SecurityConfig(GoogleTokenStore tokenStore) {
+        this.tokenStore = tokenStore;
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -25,11 +28,15 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfig()))
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/oauth2/**", "/login/**").authenticated()
-                        .anyRequest().permitAll())
+                        .anyRequest().permitAll())          // API local, todo abierto
                 .oauth2Login(oauth -> oauth
-                        .defaultSuccessUrl("/api/sync/oauth-success", true));
+                        .successHandler(googleSuccessHandler()));
         return http.build();
+    }
+
+    @Bean
+    public AuthenticationSuccessHandler googleSuccessHandler() {
+        return new GoogleOAuthSuccessHandler(tokenStore);
     }
 
     @Bean
