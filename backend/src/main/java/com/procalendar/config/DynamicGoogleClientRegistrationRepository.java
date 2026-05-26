@@ -30,7 +30,7 @@ public class DynamicGoogleClientRegistrationRepository implements ClientRegistra
             "openid", "profile", "email",
             "https://www.googleapis.com/auth/calendar"
     );
-
+ 
     public DynamicGoogleClientRegistrationRepository(SettingsService settings) {
         this.settings = settings;
     }

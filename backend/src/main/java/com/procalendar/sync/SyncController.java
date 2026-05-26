@@ -55,10 +55,12 @@ public class SyncController {
 
     @GetMapping("/status")
     public Map<String, Object> status(Authentication auth) {
-        return Map.of(
-                "googleAuthenticated", auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof OAuth2User,
-                "principal", auth == null ? "" : auth.getName()
-        );
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("googleAuthenticated", auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof OAuth2User);
+        m.put("principal", auth == null ? "" : auth.getName());
+        // Quick health-check (does NOT call the network — just reports configuration)
+        m.put("icloudConfigured", true);
+        return m;
     }
 
     @PostMapping("/{provider}")

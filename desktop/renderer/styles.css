@@ -460,14 +460,15 @@ button, input, select, textarea { font-family: inherit; }
   min-height: 0;
 }
 
+/* Plantilla de columnas compartida por header, all-day y grid */
+:root { --week-cols: 56px repeat(7, 1fr); --scrollbar-w: 12px; }
+
 .week-header {
   display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
+  grid-template-columns: var(--week-cols);
   border-bottom: 0.5px solid var(--line);
   background: var(--surface);
-  /* Reserva el mismo gutter de scrollbar que el cuerpo para alinear columnas. */
-  scrollbar-gutter: stable;
-  padding-right: var(--scrollbar-gutter, 0px);
+  padding-right: var(--scrollbar-w);  /* compensa el gutter del scrollbar de abajo */
 }
 
 .tz-cell {
@@ -514,11 +515,11 @@ button, input, select, textarea { font-family: inherit; }
 
 .allday-row {
   display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
+  grid-template-columns: var(--week-cols);
   border-bottom: 0.5px solid var(--line);
   min-height: 24px;
   background: var(--surface);
-  padding-right: var(--scrollbar-gutter, 0px);
+  padding-right: var(--scrollbar-w);  /* mismo gutter */
 }
 
 .allday-label {
@@ -547,31 +548,34 @@ button, input, select, textarea { font-family: inherit; }
 
 .week-grid {
   display: grid;
-  grid-template-columns: 56px repeat(7, 1fr);
+  grid-template-columns: var(--week-cols);
   position: relative;
 }
 
+/* Cada celda de hora mide exactamente lo mismo que el slot del lado.
+   La etiqueta queda dentro de la celda, alineada a la derecha y arriba. */
 .time-cell {
   height: 56px;
   font-size: 10px;
   color: var(--muted);
-  padding-right: 6px;
+  padding: 2px 6px 0 0;
   text-align: right;
   border-top: 0.5px solid var(--line);
-  padding-top: 0;
-  margin-top: -7px;
+  box-sizing: border-box;
 }
 
-.time-cell:first-child { border-top: none; margin-top: 0; padding-top: 6px; }
+.time-cell:first-child { border-top: none; }
 
 .day-col {
   position: relative;
   border-left: 0.5px solid var(--line);
+  box-sizing: border-box;
 }
 
 .hour-slot {
   height: 56px;
   border-top: 0.5px solid var(--line);
+  box-sizing: border-box;
 }
 
 .hour-slot:first-child { border-top: none; }
@@ -754,9 +758,10 @@ button, input, select, textarea { font-family: inherit; }
   display: grid;
   grid-template-columns: 70px 1fr;
   position: relative;
+  box-sizing: border-box;
 }
 
-.day-grid .time-cell { padding: 0 8px 0 0; }
+.day-grid .time-cell { padding: 2px 8px 0 0; height: 56px; }
 
 /* =============================================================================
    Bottom panels

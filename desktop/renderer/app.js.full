@@ -868,23 +868,8 @@ function bindAll(sel, ev, fn) {
 // =============================================================================
 // Boot
 // =============================================================================
-function measureScrollbarWidth() {
-  try {
-    var outer = document.createElement('div');
-    outer.style.cssText = 'visibility:hidden;overflow:scroll;width:100px;height:100px;position:absolute;top:-9999px;';
-    var inner = document.createElement('div');
-    inner.style.cssText = 'width:100%;height:100%;';
-    outer.appendChild(inner);
-    document.body.appendChild(outer);
-    var w = outer.offsetWidth - inner.offsetWidth;
-    outer.parentNode.removeChild(outer);
-    document.documentElement.style.setProperty('--scrollbar-w', w + 'px');
-  } catch (e) {}
-}
-
 function boot() {
   console.log('[boot] start');
-  measureScrollbarWidth();
 
   // Pickers
   try {
@@ -1013,7 +998,6 @@ function boot() {
     refreshAll().catch(function () {});
   }, 30000);
 
-
   console.log('[boot] complete');
 }
 
@@ -1021,22 +1005,16 @@ window.bootOnce = function () {
   if (window._booted) return;
   window._booted = true;
   try {
-    var t = document.getElementById('title-main');
-    if (t) t.textContent = 'Arrancando...';
-  } catch (eA) {}
-  try {
-    boot();
-  } catch (eB) {
-    console.error('[boot] crashed', eB);
-    try { document.title = '[BOOT CRASH] ' + eB.message; } catch (eC) {}
+    var t = document.getElementById('title-main'); if (t) t.textContent = 'Arrancando…';
+  } catch (_) {}
+  try { boot(); } catch (e) {
+    console.error('[boot] crashed', e);
+    try { document.title = '[BOOT CRASH] ' + e.message; } catch (_) {}
   }
 };
 
 window.checkpoint = 14;
 
-if (document.readyState !== 'loading') {
-  window.bootOnce();
-} else {
-  document.addEventListener('DOMContentLoaded', window.bootOnce);
-}
+if (document.readyState !== 'loading') window.bootOnce();
+else document.addEventListener('DOMContentLoaded', window.bootOnce);
 window.addEventListener('load', window.bootOnce);
