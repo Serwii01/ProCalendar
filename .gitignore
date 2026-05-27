@@ -5,3 +5,10 @@
 **/dist/
 output/
 *.log
+
+# Credenciales locales — nunca committear
+**/client_secret*.json
+**/application-local.properties
+**/application-secrets.properties
+*.env
+.env*

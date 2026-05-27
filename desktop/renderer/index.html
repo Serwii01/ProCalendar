@@ -331,24 +331,36 @@
     <!-- Cuentas -->
     <div class="tab-pane" data-pane="accounts" hidden>
       <h4 style="margin:8px 0 10px;font-size:13px">iCloud</h4>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+        Genera una contraseña de aplicación en
+        <a href="https://appleid.apple.com" target="_blank" style="color:var(--accent)">appleid.apple.com</a>
+        (Iniciar sesión > Contraseñas específicas de la app). No uses tu contraseña principal de iCloud.
+      </p>
       <div class="field"><div class="field-label">Apple ID (email)</div>
-        <input id="s-icloud-id" class="field-input" type="email" autocomplete="off"></div>
-      <div class="field"><div class="field-label">App-specific password</div>
+        <input id="s-icloud-id" class="field-input" type="email" autocomplete="off" placeholder="tu@icloud.com"></div>
+      <div class="field"><div class="field-label">Contraseña específica de app</div>
         <input id="s-icloud-pwd" class="field-input" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="new-password"></div>
-      <div class="field"><div class="field-label">Calendar URL (opcional, autodiscovery por defecto)</div>
-        <input id="s-icloud-url" class="field-input" placeholder="https://pXX-caldav.icloud.com/…/calendars/home/"></div>
-      <label class="checkbox-row"><input type="checkbox" id="s-icloud-enabled"> Sincronización iCloud activada</label>
+      <div class="field"><div class="field-label">Calendar URL (opcional — autodescubrimiento por defecto)</div>
+        <input id="s-icloud-url" class="field-input" placeholder="https://pXX-caldav.icloud.com/.../calendars/home/"></div>
+      <label class="checkbox-row"><input type="checkbox" id="s-icloud-enabled"> Activar sincronización con iCloud</label>
 
-      <hr style="border:none;border-top:0.5px solid var(--line);margin:16px 0">
+      <hr style="border:none;border-top:0.5px solid var(--line);margin:18px 0">
 
-      <h4 style="margin:8px 0 10px;font-size:13px">Google</h4>
+      <h4 style="margin:8px 0 10px;font-size:13px">Google Calendar</h4>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.5">
+        Crea un OAuth client en
+        <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent)">Google Cloud Console</a>
+        (APIs &amp; Services > Credentials) tipo "Web application".
+        Redirect URI: <code style="background:var(--surface-elev);padding:1px 5px;border-radius:4px">http://localhost:8080/login/oauth2/code/google</code>
+      </p>
       <div class="field"><div class="field-label">Client ID</div>
-        <input id="s-google-id" class="field-input" autocomplete="off"></div>
+        <input id="s-google-id" class="field-input" autocomplete="off" placeholder="123456-abcdef.apps.googleusercontent.com"></div>
       <div class="field"><div class="field-label">Client Secret</div>
-        <input id="s-google-secret" class="field-input" type="password" autocomplete="new-password"></div>
-      <label class="checkbox-row"><input type="checkbox" id="s-google-enabled"> Sincronización Google activada</label>
-      <div style="margin-top:10px">
-        <button class="btn ghost btn-sm" id="btn-google-connect">Conectar Google (OAuth)</button>
+        <input id="s-google-secret" class="field-input" type="password" autocomplete="new-password" placeholder="GOCSPX-..."></div>
+      <label class="checkbox-row"><input type="checkbox" id="s-google-enabled"> Activar sincronización con Google</label>
+      <div style="margin-top:12px">
+        <button class="btn ghost btn-sm" id="btn-google-connect">Conectar cuenta de Google (OAuth)</button>
+        <span class="muted" style="font-size:11px;margin-left:8px">Guarda primero las credenciales</span>
       </div>
     </div>
 

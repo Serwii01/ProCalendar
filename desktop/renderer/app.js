@@ -886,13 +886,30 @@ function boot() {
   console.log('[boot] start');
   measureScrollbarWidth();
 
-  // Pickers
+  // Pickers — el inicio empuja el fin automáticamente
   try {
-    pickers.startDate  = attachDatePicker(document.getElementById('pick-start-date'));
-    pickers.startTime  = attachTimePicker(document.getElementById('pick-start-time'));
+    // Primero los de fin para tener referencias listas cuando se dispare onChange
     pickers.endDate    = attachDatePicker(document.getElementById('pick-end-date'));
     pickers.endTime    = attachTimePicker(document.getElementById('pick-end-time'));
     pickers.allDayDate = attachDatePicker(document.getElementById('pick-allday-date'));
+
+    pickers.startDate = attachDatePicker(document.getElementById('pick-start-date'), {
+      onChange: function (newDate) {
+        // Fin = mismo día (siempre)
+        if (pickers.endDate) pickers.endDate.value = newDate;
+      }
+    });
+    pickers.startTime = attachTimePicker(document.getElementById('pick-start-time'), {
+      onChange: function (newTime) {
+        if (!pickers.endTime) return;
+        // Fin = inicio + 1 hora, clamp a 23:59 si se pasa de medianoche
+        var parts = newTime.split(':');
+        var h = Number(parts[0]) + 1;
+        var m = Number(parts[1]) || 0;
+        if (h > 23) { h = 23; m = 59; }
+        pickers.endTime.value = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+      }
+    });
   } catch (e) { console.error('[pickers]', e); }
 
   // Top tabs
