@@ -36,20 +36,20 @@
   <div class="topnav-left">
     <span class="brand">Pro Calendar</span>
     <nav class="view-tabs">
-      <button class="view-tab" data-view="day">Día</button>
-      <button class="view-tab active" data-view="week">Semana</button>
-      <button class="view-tab" data-view="month">Mes</button>
+      <button class="view-tab" data-view="day" data-i18n="nav.day">Día</button>
+      <button class="view-tab active" data-view="week" data-i18n="nav.week">Semana</button>
+      <button class="view-tab" data-view="month" data-i18n="nav.month">Mes</button>
     </nav>
   </div>
   <div class="topnav-right">
     <div class="searchbar">
       <span class="ic sm"><svg><use href="#i-search"/></svg></span>
-      <input id="buscador" type="search" placeholder="Buscar">
+      <input id="buscador" type="search" placeholder="Buscar" data-i18n-attr="placeholder:nav.search">
     </div>
     <button class="btn" id="btn-nuevo-evento">
-      <span class="ic"><svg><use href="#i-plus"/></svg></span> Nuevo evento
+      <span class="ic"><svg><use href="#i-plus"/></svg></span> <span data-i18n="nav.new">Nuevo evento</span>
     </button>
-    <button class="icon-btn" title="Ajustes" id="btn-settings">
+    <button class="icon-btn" data-i18n-attr="title:nav.settings" title="Ajustes" id="btn-settings">
       <span class="ic"><svg><use href="#i-settings"/></svg></span>
     </button>
     <div class="avatar" title="Cuenta" id="avatar">S</div>
@@ -64,41 +64,41 @@
     <div class="profile-card">
       <div class="avatar">S</div>
       <div>
-        <div class="profile-name">Mi Calendario</div>
-        <div class="profile-meta" id="profile-meta">Local + iCloud</div>
+        <div class="profile-name" data-i18n="sidebar.account">Mi Calendario</div>
+        <div class="profile-meta" id="profile-meta" data-i18n="sidebar.subtitle">Local + iCloud</div>
       </div>
     </div>
 
     <div>
-      <div class="section-title">Calendarios</div>
+      <div class="section-title" data-i18n="sidebar.calendars">Calendarios</div>
       <div class="nav-list cal-list">
         <div class="nav-item active" data-cal="all">
-          <span class="dot" style="background:var(--accent)"></span> Todos
+          <span class="dot" style="background:var(--accent)"></span> <span data-i18n="sidebar.all">Todos</span>
         </div>
         <div class="nav-item" data-cal="GOOGLE">
-          <span class="dot" style="background:#ea4335"></span> Google
+          <span class="dot" style="background:#ea4335"></span> <span data-i18n="sidebar.google">Google</span>
         </div>
         <div class="nav-item" data-cal="ICLOUD">
-          <span class="dot" style="background:#0a84ff"></span> iCloud
+          <span class="dot" style="background:#0a84ff"></span> <span data-i18n="sidebar.icloud">iCloud</span>
         </div>
       </div>
     </div>
 
     <div>
-      <div class="section-title">Vistas</div>
+      <div class="section-title" data-i18n="sidebar.views">Vistas</div>
       <div class="nav-list">
         <div class="nav-item active" data-section="calendar">
-          <span class="ic"><svg><use href="#i-calendar"/></svg></span> Calendario
+          <span class="ic"><svg><use href="#i-calendar"/></svg></span> <span data-i18n="sidebar.calendar">Calendario</span>
         </div>
         <div class="nav-item" data-section="tasks">
-          <span class="ic"><svg><use href="#i-list"/></svg></span> Tareas
+          <span class="ic"><svg><use href="#i-list"/></svg></span> <span data-i18n="sidebar.tasks">Tareas</span>
         </div>
       </div>
     </div>
 
     <div class="sync-block">
       <button class="btn soft" id="btn-sync-icloud">
-        <span class="ic"><svg><use href="#i-refresh"/></svg></span> Sincronizar ahora
+        <span class="ic"><svg><use href="#i-refresh"/></svg></span> <span data-i18n="sidebar.sync">Sincronizar ahora</span>
       </button>
       <div id="sync-status" class="sync-status"></div>
     </div>
@@ -113,7 +113,7 @@
       </div>
       <div class="nav-controls">
         <button id="btn-prev" title="Anterior"><span class="ic sm"><svg><use href="#i-chevron-left"/></svg></span></button>
-        <button id="btn-hoy">Hoy</button>
+        <button id="btn-hoy" data-i18n="title.today">Hoy</button>
         <button id="btn-next" title="Siguiente"><span class="ic sm"><svg><use href="#i-chevron-right"/></svg></span></button>
       </div>
     </div>
@@ -144,12 +144,12 @@
     <div class="tasks-view" id="view-tasks" style="display:none">
       <div class="tasks-cols">
         <aside class="tasks-lists">
-          <div class="section-title">Listas</div>
+          <div class="section-title" data-i18n="tasks.lists">Listas</div>
           <div class="nav-list">
-            <div class="nav-item active" data-list="all">Todas</div>
-            <div class="nav-item" data-list="today">Hoy</div>
-            <div class="nav-item" data-list="upcoming">Próximas</div>
-            <div class="nav-item" data-list="done">Completadas</div>
+            <div class="nav-item active" data-list="all" data-i18n="tasks.all">Todas</div>
+            <div class="nav-item" data-list="today" data-i18n="tasks.today">Hoy</div>
+            <div class="nav-item" data-list="upcoming" data-i18n="tasks.upcoming">Próximas</div>
+            <div class="nav-item" data-list="done" data-i18n="tasks.done">Completadas</div>
           </div>
         </aside>
         <div class="tasks-main">
@@ -158,7 +158,7 @@
             <span class="muted" id="tasks-count"></span>
           </div>
           <form id="form-todo-main" class="add-task-card">
-            <input id="todo-titulo-main" placeholder="Nueva tarea…">
+            <input id="todo-titulo-main" placeholder="Nueva tarea…" data-i18n-attr="placeholder:rp.newTask">
             <div class="row">
               <select id="todo-prioridad-main">
                 <option value="LOW">Baja</option>
@@ -180,15 +180,15 @@
     <!-- BOTTOM PANELS -->
     <div class="bottom-panels">
       <div class="panel">
-        <h4>Prioridades</h4>
+        <h4 data-i18n="panel.priorities">Prioridades</h4>
         <div id="panel-priorities"><div class="empty-card">No hay tareas con prioridad alta</div></div>
       </div>
       <div class="panel">
-        <h4>Próximos plazos</h4>
+        <h4 data-i18n="panel.deadlines">Próximos plazos</h4>
         <div id="panel-deadlines"><div class="empty-card">No hay eventos próximos</div></div>
       </div>
       <div class="panel">
-        <h4>Esta semana</h4>
+        <h4 data-i18n="panel.thisWeek">Esta semana</h4>
         <div id="panel-stats" class="stats-grid"></div>
       </div>
     </div>
@@ -197,13 +197,13 @@
   <!-- RIGHT PANEL -->
   <aside class="rightpanel">
     <div class="rp-header">
-      <h3>Tareas</h3>
+      <h3 data-i18n="sidebar.tasks">Tareas</h3>
       <div class="rp-sub" id="rp-today-label"></div>
     </div>
     <div id="todo-list" class="todo-list"></div>
 
     <form class="add-task-card" id="form-todo">
-      <input id="todo-titulo" placeholder="Nueva tarea…">
+      <input id="todo-titulo" placeholder="Nueva tarea…" data-i18n-attr="placeholder:rp.newTask">
       <div class="row">
         <select id="todo-prioridad">
           <option value="LOW">Baja</option>
@@ -226,31 +226,31 @@
   <form class="modal" id="form-evento" onsubmit="return false">
     <input type="hidden" id="evento-id">
     <div class="modal-header">
-      <h3 class="modal-title" id="modal-title-text">Nuevo evento</h3>
+      <h3 class="modal-title" id="modal-title-text" data-i18n="event.new">Nuevo evento</h3>
       <button type="button" class="modal-close" id="btn-modal-close" aria-label="Cerrar">
         <span class="ic"><svg><use href="#i-x"/></svg></span>
       </button>
     </div>
 
     <div class="field">
-      <div class="field-label">Título</div>
-      <input id="titulo" class="field-input" placeholder="p. ej. Reunión de equipo" required autocomplete="off">
+      <div class="field-label" data-i18n="event.title">Título</div>
+      <input id="titulo" class="field-input" placeholder="p. ej. Reunión de equipo" data-i18n-attr="placeholder:event.titlePlaceholder" required autocomplete="off">
     </div>
 
     <div class="field">
       <label class="checkbox-row">
         <input type="checkbox" id="all-day">
-        <span>Todo el día</span>
+        <span data-i18n="event.allday">Todo el día</span>
       </label>
     </div>
 
     <div class="field" id="campos-horarios">
-      <div class="field-label">Inicio</div>
+      <div class="field-label" data-i18n="event.start">Inicio</div>
       <div class="dt-row">
         <button type="button" id="pick-start-date"></button>
         <button type="button" id="pick-start-time"></button>
       </div>
-      <div class="field-label" style="margin-top:10px">Fin</div>
+      <div class="field-label" style="margin-top:10px" data-i18n="event.end">Fin</div>
       <div class="dt-row">
         <button type="button" id="pick-end-date"></button>
         <button type="button" id="pick-end-time"></button>
@@ -258,42 +258,42 @@
     </div>
 
     <div class="field" id="campos-dia" style="display:none">
-      <div class="field-label">Día</div>
+      <div class="field-label" data-i18n="event.day">Día</div>
       <button type="button" id="pick-allday-date"></button>
     </div>
 
     <div class="field">
-      <div class="field-label">Ubicación</div>
-      <input id="ubicacion" class="field-input" placeholder="Lugar, dirección o enlace">
+      <div class="field-label" data-i18n="event.location">Ubicación</div>
+      <input id="ubicacion" class="field-input" placeholder="Lugar, dirección o enlace" data-i18n-attr="placeholder:event.locationPlaceholder">
     </div>
 
     <div class="field">
-      <div class="field-label">Calendario</div>
+      <div class="field-label" data-i18n="event.calendar">Calendario</div>
       <select id="cal-target" class="field-input">
-        <option value="">Solo local (sin sincronizar)</option>
+        <option value="" data-i18n="event.calendar.localOnly">Solo local (sin sincronizar)</option>
       </select>
     </div>
 
     <div class="field">
-      <div class="field-label">Color</div>
+      <div class="field-label" data-i18n="event.color">Color</div>
       <div id="picker-color" class="color-picker"></div>
     </div>
 
     <div class="field">
-      <div class="field-label">Notas</div>
-      <textarea id="descripcion" class="field-input" placeholder="Detalles, agenda…"></textarea>
+      <div class="field-label" data-i18n="event.notes">Notas</div>
+      <textarea id="descripcion" class="field-input" placeholder="Detalles, agenda…" data-i18n-attr="placeholder:event.notesPlaceholder"></textarea>
     </div>
 
     <div class="modal-footer">
       <button type="button" class="btn danger btn-sm" id="btn-borrar" style="display:none">
-        <span class="ic sm"><svg><use href="#i-trash"/></svg></span> Borrar
+        <span class="ic sm"><svg><use href="#i-trash"/></svg></span> <span data-i18n="event.delete">Borrar</span>
       </button>
       <button type="button" class="btn ghost btn-sm" id="btn-to-todo" style="display:none">
-        <span class="ic sm"><svg><use href="#i-check"/></svg></span> Convertir en tarea
+        <span class="ic sm"><svg><use href="#i-check"/></svg></span> <span data-i18n="event.toTodo">Convertir en tarea</span>
       </button>
       <div class="right">
-        <button type="button" class="btn ghost" id="btn-cancelar">Cancelar</button>
-        <button type="button" class="btn" id="btn-guardar">Guardar</button>
+        <button type="button" class="btn ghost" id="btn-cancelar" data-i18n="event.cancel">Cancelar</button>
+        <button type="button" class="btn" id="btn-guardar" data-i18n="event.save">Guardar</button>
       </div>
     </div>
   </form>
@@ -303,28 +303,38 @@
 <div class="modal-backdrop" id="modal-settings">
   <div class="modal" style="max-width:560px">
     <div class="modal-header">
-      <h3 class="modal-title">Ajustes</h3>
+      <h3 class="modal-title" data-i18n="settings.title">Ajustes</h3>
       <button type="button" class="modal-close" id="btn-settings-close">
         <span class="ic"><svg><use href="#i-x"/></svg></span>
       </button>
     </div>
 
     <div class="tabs" id="settings-tabs">
-      <button class="tab active" data-tab="appearance">Apariencia</button>
-      <button class="tab" data-tab="accounts">Cuentas</button>
-      <button class="tab" data-tab="sync">Sincronización</button>
-      <button class="tab" data-tab="about">Acerca de</button>
+      <button class="tab active" data-tab="appearance" data-i18n="settings.tab.appearance">Apariencia</button>
+      <button class="tab" data-tab="accounts" data-i18n="settings.tab.accounts">Cuentas</button>
+      <button class="tab" data-tab="sync" data-i18n="settings.tab.sync">Sincronización</button>
+      <button class="tab" data-tab="language" data-i18n="settings.tab.language">Idioma</button>
+      <button class="tab" data-tab="about" data-i18n="settings.tab.about">Acerca de</button>
     </div>
 
     <!-- Apariencia -->
     <div class="tab-pane" data-pane="appearance">
       <div class="field">
-        <div class="field-label">Tema</div>
+        <div class="field-label" data-i18n="settings.theme">Tema</div>
         <div class="segmented" id="theme-segmented">
-          <button data-theme="light">Claro</button>
-          <button data-theme="dark">Oscuro</button>
-          <button data-theme="auto">Sistema</button>
+          <button data-theme="light" data-i18n="settings.theme.light">Claro</button>
+          <button data-theme="dark"  data-i18n="settings.theme.dark">Oscuro</button>
+          <button data-theme="auto"  data-i18n="settings.theme.auto">Sistema</button>
         </div>
+      </div>
+    </div>
+
+    <!-- Idioma -->
+    <div class="tab-pane" data-pane="language" hidden>
+      <div class="field">
+        <div class="field-label" data-i18n="settings.lang.title">Idioma de la interfaz</div>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 14px;line-height:1.5" data-i18n="settings.lang.help">Cambia el idioma usado en menús, botones y diálogos. Se aplica al instante.</p>
+        <div id="lang-segmented" class="segmented" style="flex-wrap:wrap"></div>
       </div>
     </div>
 
@@ -336,39 +346,52 @@
         <a href="https://appleid.apple.com" target="_blank" style="color:var(--accent)">appleid.apple.com</a>
         (Iniciar sesión > Contraseñas específicas de la app). No uses tu contraseña principal de iCloud.
       </p>
-      <div class="field"><div class="field-label">Apple ID (email)</div>
+      <div class="field"><div class="field-label" data-i18n="settings.icloud.id">Apple ID (email)</div>
         <input id="s-icloud-id" class="field-input" type="email" autocomplete="off" placeholder="tu@icloud.com"></div>
-      <div class="field"><div class="field-label">Contraseña específica de app</div>
+      <div class="field"><div class="field-label" data-i18n="settings.icloud.pwd">Contraseña específica de app</div>
         <input id="s-icloud-pwd" class="field-input" type="password" placeholder="xxxx-xxxx-xxxx-xxxx" autocomplete="new-password"></div>
-      <div class="field"><div class="field-label">Calendar URL (opcional — autodescubrimiento por defecto)</div>
+      <div class="field"><div class="field-label" data-i18n="settings.icloud.url">Calendar URL (opcional — autodescubrimiento por defecto)</div>
         <input id="s-icloud-url" class="field-input" placeholder="https://pXX-caldav.icloud.com/.../calendars/home/"></div>
-      <label class="checkbox-row"><input type="checkbox" id="s-icloud-enabled"> Activar sincronización con iCloud</label>
+      <label class="checkbox-row"><input type="checkbox" id="s-icloud-enabled"> <span data-i18n="settings.icloud.enabled">Activar sincronización con iCloud</span></label>
 
       <hr style="border:none;border-top:0.5px solid var(--line);margin:18px 0">
 
       <h4 style="margin:8px 0 10px;font-size:13px">Google Calendar</h4>
       <p style="font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.5">
-        Crea un OAuth client en
-        <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent)">Google Cloud Console</a>
-        (APIs &amp; Services > Credentials) tipo "Web application".
-        Redirect URI: <code style="background:var(--surface-elev);padding:1px 5px;border-radius:4px">http://localhost:8080/login/oauth2/code/google</code>
+        Google no admite contraseñas de aplicación para Calendar: la conexión se hace
+        con tu cuenta de Google en el navegador (OAuth). No necesitas configurar nada:
+        activa la casilla y pulsa <b>Conectar cuenta de Google</b>.
       </p>
-      <div class="field"><div class="field-label">Client ID</div>
-        <input id="s-google-id" class="field-input" autocomplete="off" placeholder="123456-abcdef.apps.googleusercontent.com"></div>
-      <div class="field"><div class="field-label">Client Secret</div>
-        <input id="s-google-secret" class="field-input" type="password" autocomplete="new-password" placeholder="GOCSPX-..."></div>
-      <label class="checkbox-row"><input type="checkbox" id="s-google-enabled"> Activar sincronización con Google</label>
+      <label class="checkbox-row"><input type="checkbox" id="s-google-enabled"> <span data-i18n="settings.google.enabled">Activar sincronización con Google</span></label>
       <div style="margin-top:12px">
-        <button class="btn ghost btn-sm" id="btn-google-connect">Conectar cuenta de Google (OAuth)</button>
-        <span class="muted" style="font-size:11px;margin-left:8px">Guarda primero las credenciales</span>
+        <button class="btn ghost btn-sm" id="btn-google-connect" data-i18n="settings.google.connect">Conectar cuenta de Google</button>
+        <span class="muted" style="font-size:11px;margin-left:8px" id="google-conn-status"></span>
       </div>
+
+      <details style="margin-top:14px">
+        <summary style="font-size:12px;color:var(--muted);cursor:pointer" data-i18n="settings.google.advanced">Avanzado: usar mi propio OAuth client</summary>
+        <p style="font-size:11px;color:var(--muted);margin:8px 0 10px;line-height:1.5">
+          Opcional. Crea un client en
+          <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent)">Google Cloud Console</a>
+          (tipo "Web application") con redirect URIs
+          <code style="background:var(--surface-elev);padding:1px 5px;border-radius:4px">http://localhost:PUERTO/login/oauth2/code/google</code>
+          para cada puerto del 8080 al 8090 (la app usa el primero que esté libre).
+        </p>
+        <div class="field"><div class="field-label" data-i18n="settings.google.id">Client ID</div>
+          <input id="s-google-id" class="field-input" autocomplete="off" placeholder="123456-abcdef.apps.googleusercontent.com"></div>
+        <div class="field"><div class="field-label" data-i18n="settings.google.secret">Client Secret</div>
+          <input id="s-google-secret" class="field-input" type="password" autocomplete="new-password" placeholder="GOCSPX-..."></div>
+      </details>
     </div>
 
     <!-- Sincronización -->
     <div class="tab-pane" data-pane="sync" hidden>
-      <label class="checkbox-row"><input type="checkbox" id="s-autosync-enabled"> Sincronización automática</label>
+      <label class="checkbox-row" style="margin-top:10px">
+        <input type="checkbox" id="s-autosync-enabled" checked>
+        <span data-i18n="settings.sync.enabled">Sincronizar automáticamente en segundo plano</span>
+      </label>
       <div class="field" style="margin-top:10px">
-        <div class="field-label">Intervalo (minutos)</div>
+        <div class="field-label" data-i18n="settings.sync.interval">Intervalo (minutos)</div>
         <input id="s-autosync-minutes" class="field-input" type="number" min="1" max="60" value="5">
       </div>
     </div>
@@ -376,21 +399,22 @@
     <!-- Acerca de -->
     <div class="tab-pane" data-pane="about" hidden>
       <p style="font-size:12px;color:var(--muted);line-height:1.6">
-        Pro Calendar 0.2 — Cliente local con sincronización Google e iCloud.<br>
-        Spring Boot + MySQL + Electron.
+        Pro Calendar 1.0 — Cliente local con sincronización Google e iCloud.<br>
+        Spring Boot + Electron · Base de datos local embebida.<br>
         Desarrollado por Sergio Fernández Morales
       </p>
     </div>
 
     <div class="modal-footer">
-      <button type="button" class="btn ghost btn-sm" id="btn-settings-cancel">Cancelar</button>
+      <button type="button" class="btn ghost btn-sm" id="btn-settings-cancel" data-i18n="settings.cancel">Cancelar</button>
       <div class="right">
-        <button type="button" class="btn" id="btn-settings-save">Guardar cambios</button>
+        <button type="button" class="btn" id="btn-settings-save" data-i18n="settings.save">Guardar cambios</button>
       </div>
     </div>
   </div>
 </div>
 
+<script src="./i18n.js"></script>
 <script src="./ui.js"></script>
 <script src="./app.js"></script>
 </body>

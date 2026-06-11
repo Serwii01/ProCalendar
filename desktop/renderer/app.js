@@ -25,7 +25,10 @@ var attachTimePicker = UI.attachTimePicker || function (el) { if (el) el.textCon
 // =============================================================================
 // Constants
 // =============================================================================
-var API_BASE     = 'http://localhost:8080/api';
+// Puerto real del backend (inyectado por Electron; 8080 si se abre en navegador)
+var API_PORT     = (window.appInfo && window.appInfo.apiPort) || 8080;
+var API_ORIGIN   = 'http://localhost:' + API_PORT;
+var API_BASE     = API_ORIGIN + '/api';
 var API_EVENTS   = API_BASE + '/events';
 var API_TODOS    = API_BASE + '/todos';
 var API_SYNC     = API_BASE + '/sync';
@@ -55,6 +58,7 @@ var state = {
   events: [],
   todos: [],
   icloudCalendars: [],
+  googleCalendars: [],
   editingId: null,
   selectedColor: COLORS[0].value,
   filterSource: 'all',
@@ -144,15 +148,37 @@ function loadIcloudCalendars() {
   }).catch(function () { state.icloudCalendars = []; });
 }
 
+function loadGoogleCalendars() {
+  return api(API_SYNC + '/google/calendars').then(function (data) {
+    state.googleCalendars = data || [];
+    populateCalendarSelect();
+  }).catch(function () { state.googleCalendars = []; });
+}
+
 function populateCalendarSelect() {
   var sel = document.getElementById('cal-target');
   if (!sel) return;
   var current = sel.value;
   var html = '<option value="">Solo local (sin sincronizar)</option>';
-  for (var i=0; i<state.icloudCalendars.length; i++) {
-    var c = state.icloudCalendars[i];
-    html += '<option value="'+escapeHtml(c.url)+'" data-name="'+escapeHtml(c.name)+'">'+escapeHtml(c.name)+'</option>';
+  
+  if (state.icloudCalendars && state.icloudCalendars.length > 0) {
+    html += '<optgroup label="iCloud">';
+    for (var i=0; i<state.icloudCalendars.length; i++) {
+      var c = state.icloudCalendars[i];
+      html += '<option value="'+escapeHtml(c.url)+'" data-name="'+escapeHtml(c.name)+'">'+escapeHtml(c.name)+'</option>';
+    }
+    html += '</optgroup>';
   }
+
+  if (state.googleCalendars && state.googleCalendars.length > 0) {
+    html += '<optgroup label="Google Calendar">';
+    for (var j=0; j<state.googleCalendars.length; j++) {
+      var g = state.googleCalendars[j];
+      html += '<option value="'+escapeHtml(g.id)+'" data-name="'+escapeHtml(g.name)+'">'+escapeHtml(g.name)+'</option>';
+    }
+    html += '</optgroup>';
+  }
+
   sel.innerHTML = html;
   if (current) sel.value = current;
 }
@@ -597,6 +623,9 @@ function deleteEvent() {
   if (ev && ev.source === 'ICLOUD') {
     p = confirmDialog({ title:'Borrar evento de iCloud', message:'Se borrará también en tu iPhone tras la próxima sincronización.', confirmText:'Borrar en iCloud', danger:true });
     cascade = true;
+  } else if (ev && ev.source === 'GOOGLE') {
+    p = confirmDialog({ title:'Borrar evento de Google', message:'Se borrará también de tu Google Calendar.', confirmText:'Borrar en Google', danger:true });
+    cascade = true;
   } else {
     p = confirmDialog({ title:'¿Borrar este evento?', confirmText:'Borrar', danger:true });
   }
@@ -652,28 +681,67 @@ function setStatus(msg, kind) {
 }
 
 function syncIcloud() {
-  setStatus('Sincronizando…','busy');
+  setStatus('Sincronizando iCloud…','busy');
   api(API_SYNC + '/icloud?mode=full', { method:'POST' })
     .then(function (r) {
       r = r || {};
       var msg = (r.message || '').toLowerCase();
       var bad = msg.indexOf('error') >= 0 || msg.indexOf('deshabilitado') >= 0 || msg.indexOf('faltan') >= 0;
       if (bad) {
-        setStatus('Error: ' + (r.message || 'sync falló'), 'err');
+        setStatus('Error iCloud: ' + (r.message || 'sync falló'), 'err');
       } else {
         var imp = r.imported || 0, upd = r.updated || 0;
-        if (imp + upd === 0) setStatus('Sincronizado (sin cambios)', 'ok');
-        else                 setStatus('Sincronizado: '+imp+' nuevos, '+upd+' actualizados', 'ok');
+        if (imp + upd === 0) setStatus('iCloud: Sin cambios', 'ok');
+        else                 setStatus('iCloud: '+imp+' nuevos, '+upd+' actualizados', 'ok');
       }
       return loadIcloudCalendars().then(refreshAll);
     })
-    .catch(function (e) { setStatus('Error: '+e.message,'err'); });
+    .catch(function (e) { setStatus('Error iCloud: '+e.message,'err'); });
+}
+
+function syncGoogle() {
+  setStatus('Sincronizando Google…','busy');
+  return api(API_SYNC + '/google?mode=full', { method:'POST' })
+    .then(function (r) {
+      r = r || {};
+      var msg = (r.message || '').toLowerCase();
+      var bad = msg.indexOf('error') >= 0 || msg.indexOf('deshabilitado') >= 0 || msg.indexOf('no hay token') >= 0;
+      if (bad) {
+        setStatus('Error Google: ' + (r.message || 'sync falló'), 'err');
+      } else {
+        var imp = r.imported || 0, upd = r.updated || 0;
+        if (imp + upd === 0) setStatus('Google: Sin cambios', 'ok');
+        else                 setStatus('Google: '+imp+' nuevos, '+upd+' actualizados', 'ok');
+      }
+      return loadGoogleCalendars().then(refreshAll);
+    })
+    .catch(function (e) { setStatus('Error Google: '+e.message,'err'); });
+}
+
+function syncAll() {
+  setStatus('Sincronizando todo…', 'busy');
+  Promise.allSettled([syncIcloud(), syncGoogle()]).then(function() {
+    setStatus('Sincronización completada', 'ok');
+  });
 }
 
 function startGoogleOAuth() {
-  var url = 'http://localhost:8080/oauth2/authorization/google';
+  var url = API_ORIGIN + '/oauth2/authorization/google';
   if (window.electronAPI && window.electronAPI.openExternal) window.electronAPI.openExternal(url);
   else window.open(url, '_blank');
+  // Sondea el estado hasta que el usuario complete el login en el navegador
+  var tries = 0;
+  var t = setInterval(function () {
+    tries++;
+    api(API_SYNC + '/status').then(function (st) {
+      if (st && st.googleAuthenticated) {
+        clearInterval(t);
+        refreshGoogleConnStatus();
+        toast('Google conectado','ok');
+        loadGoogleCalendars();
+      } else if (tries > 60) clearInterval(t);  // ~3 min
+    }).catch(function () { if (tries > 60) clearInterval(t); });
+  }, 3000);
 }
 
 window.checkpoint = 10;
@@ -714,9 +782,10 @@ function setSourceFilter(src) {
 }
 
 function renderCurrentView() {
-  if (state.view === 'week')  renderWeekView();
-  if (state.view === 'month') renderMonthView();
   if (state.view === 'day')   renderDayView();
+  else if (state.view === 'week')  renderWeekView();
+  else if (state.view === 'month') renderMonthView();
+  else if (state.view === 'tasks') renderTasksView();
 }
 
 function refreshAll() {
@@ -826,8 +895,18 @@ function openSettings() {
     var ae = document.getElementById('s-autosync-enabled'); if (ae) ae.checked = s['sync.autoEnabled'] !== 'false';
     setVal('s-autosync-minutes', s['sync.autoMinutes'] || '5');
   }).catch(function () {}).then(function () {
+    refreshGoogleConnStatus();
     var m = document.getElementById('modal-settings'); if (m) m.classList.add('show');
   });
+}
+
+function refreshGoogleConnStatus() {
+  var el = document.getElementById('google-conn-status');
+  if (!el) return;
+  api(API_SYNC + '/status').then(function (st) {
+    el.textContent = (st && st.googleAuthenticated) ? '✓ Cuenta conectada' : 'Sin conectar';
+    el.style.color = (st && st.googleAuthenticated) ? '#22c55e' : '';
+  }).catch(function () { el.textContent = ''; });
 }
 
 function hideSettings() { var m = document.getElementById('modal-settings'); if (m) m.classList.remove('show'); }
@@ -868,48 +947,16 @@ function bindAll(sel, ev, fn) {
 // =============================================================================
 // Boot
 // =============================================================================
-function measureScrollbarWidth() {
-  try {
-    var outer = document.createElement('div');
-    outer.style.cssText = 'visibility:hidden;overflow:scroll;width:100px;height:100px;position:absolute;top:-9999px;';
-    var inner = document.createElement('div');
-    inner.style.cssText = 'width:100%;height:100%;';
-    outer.appendChild(inner);
-    document.body.appendChild(outer);
-    var w = outer.offsetWidth - inner.offsetWidth;
-    outer.parentNode.removeChild(outer);
-    document.documentElement.style.setProperty('--scrollbar-w', w + 'px');
-  } catch (e) {}
-}
-
 function boot() {
   console.log('[boot] start');
-  measureScrollbarWidth();
 
-  // Pickers — el inicio empuja el fin automáticamente
+  // Pickers
   try {
-    // Primero los de fin para tener referencias listas cuando se dispare onChange
+    pickers.startDate  = attachDatePicker(document.getElementById('pick-start-date'));
+    pickers.startTime  = attachTimePicker(document.getElementById('pick-start-time'));
     pickers.endDate    = attachDatePicker(document.getElementById('pick-end-date'));
     pickers.endTime    = attachTimePicker(document.getElementById('pick-end-time'));
     pickers.allDayDate = attachDatePicker(document.getElementById('pick-allday-date'));
-
-    pickers.startDate = attachDatePicker(document.getElementById('pick-start-date'), {
-      onChange: function (newDate) {
-        // Fin = mismo día (siempre)
-        if (pickers.endDate) pickers.endDate.value = newDate;
-      }
-    });
-    pickers.startTime = attachTimePicker(document.getElementById('pick-start-time'), {
-      onChange: function (newTime) {
-        if (!pickers.endTime) return;
-        // Fin = inicio + 1 hora, clamp a 23:59 si se pasa de medianoche
-        var parts = newTime.split(':');
-        var h = Number(parts[0]) + 1;
-        var m = Number(parts[1]) || 0;
-        if (h > 23) { h = 23; m = 59; }
-        pickers.endTime.value = (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
-      }
-    });
   } catch (e) { console.error('[pickers]', e); }
 
   // Top tabs
@@ -965,7 +1012,7 @@ function boot() {
   });
 
   // Sync
-  bind('btn-sync-icloud', 'click', syncIcloud);
+  bind('btn-sync-icloud', 'click', syncAll);
 
   // Color picker
   renderColorPicker();
@@ -1020,6 +1067,7 @@ function boot() {
 
   // Now line + initial data
   loadIcloudCalendars();
+  loadGoogleCalendars();
   refreshAll();
   setInterval(function () { if (state.view === 'week' || state.view === 'day') renderCurrentView(); }, 60000);
 
@@ -1030,7 +1078,6 @@ function boot() {
     refreshAll().catch(function () {});
   }, 30000);
 
-
   console.log('[boot] complete');
 }
 
@@ -1038,22 +1085,16 @@ window.bootOnce = function () {
   if (window._booted) return;
   window._booted = true;
   try {
-    var t = document.getElementById('title-main');
-    if (t) t.textContent = 'Arrancando...';
-  } catch (eA) {}
-  try {
-    boot();
-  } catch (eB) {
-    console.error('[boot] crashed', eB);
-    try { document.title = '[BOOT CRASH] ' + eB.message; } catch (eC) {}
+    var t = document.getElementById('title-main'); if (t) t.textContent = 'Arrancando…';
+  } catch (_) {}
+  try { boot(); } catch (e) {
+    console.error('[boot] crashed', e);
+    try { document.title = '[BOOT CRASH] ' + e.message; } catch (_) {}
   }
 };
 
 window.checkpoint = 14;
 
-if (document.readyState !== 'loading') {
-  window.bootOnce();
-} else {
-  document.addEventListener('DOMContentLoaded', window.bootOnce);
-}
+if (document.readyState !== 'loading') window.bootOnce();
+else document.addEventListener('DOMContentLoaded', window.bootOnce);
 window.addEventListener('load', window.bootOnce);

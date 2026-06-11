@@ -1,0 +1,2 @@
+El JAR del backend (backend.jar) se copia aquí durante el build.
+Se ignora en git mediante .gitignore.

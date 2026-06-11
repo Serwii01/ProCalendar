@@ -1,13 +1,22 @@
 {
   "name": "pro-calendar-desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "description": "Pro Calendar - calendario local con sincronizacion Google e iCloud",
+  "author": "Sergio Fernandez Morales",
   "private": true,
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
+    "build:backend": "cd ../backend && mvn clean package -DskipTests && node ../desktop/scripts/copy-jar.js",
+    "copy:jar": "node scripts/copy-jar.js",
+    "download:jre": "node scripts/download-jre.js",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:installer": "electron-builder --win nsis",
+    "dist:portable": "electron-builder --win portable",
+    "dist:all": "npm run build:backend && electron-builder --win nsis portable",
+    "dist:standalone": "npm run download:jre && npm run build:backend && electron-builder --win nsis portable"
   },
   "devDependencies": {
     "electron": "^31.0.0",
@@ -16,8 +25,45 @@
   "build": {
     "appId": "com.procalendar.desktop",
     "productName": "Pro Calendar",
-    "files": ["**/*"],
-    "directories": { "output": "release" },
-    "win": { "target": ["nsis", "portable"] }
+    "copyright": "Copyright (c) 2026 Sergio Fernandez Morales",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "!renderer/app.js.full",
+      "!**/.DS_Store"
+    ],
+    "extraResources": [
+      { "from": "resources", "to": ".", "filter": ["**/*"] }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "ProCalendar-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Pro Calendar",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "Pro Calendar",
+      "license": "LICENSE.txt",
+      "artifactName": "ProCalendar-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ProCalendar-Portable-${version}.${ext}"
+    },
+    "publish": null
   }
 }
