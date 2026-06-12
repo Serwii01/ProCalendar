@@ -21,10 +21,13 @@ public class SyncController {
 
     private final GoogleCalendarSyncService google;
     private final ICloudCalDavSyncService icloud;
+    private final com.procalendar.sync.google.GoogleTokenStore googleTokens;
 
-    public SyncController(GoogleCalendarSyncService google, ICloudCalDavSyncService icloud) {
+    public SyncController(GoogleCalendarSyncService google, ICloudCalDavSyncService icloud,
+                          com.procalendar.sync.google.GoogleTokenStore googleTokens) {
         this.google = google;
         this.icloud = icloud;
+        this.googleTokens = googleTokens;
     }
 
     @GetMapping("/providers")
@@ -35,7 +38,8 @@ public class SyncController {
         );
     }
 
-    /** Lista los calendarios iCloud descubiertos (para el selector del cliente). */
+    /** Lista los calendarios iCloud descubiertos. Devuelve siempre 200 para no romper
+     *  el frontend con "Failed to fetch"; en caso de error, lista vacía. */
     @GetMapping("/icloud/calendars")
     public List<Map<String, String>> icloudCalendars() {
         try {
@@ -49,30 +53,68 @@ public class SyncController {
                     })
                     .toList();
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "iCloud discovery failed: " + e.getMessage());
+            // Log y devolver lista vacía. Los errores reales aparecen al pulsar Sincronizar.
+            org.slf4j.LoggerFactory.getLogger(SyncController.class)
+                    .warn("[icloud/calendars] discovery falló: {}", e.getMessage());
+            return java.util.Collections.emptyList();
+        }
+    }
+
+    /** Lista los calendarios Google descubiertos. */
+    @GetMapping("/google/calendars")
+    public List<Map<String, String>> googleCalendars() {
+        try {
+            return google.discoverCalendarsWithMeta().stream()
+                    .map(c -> {
+                        Map<String, String> m = new java.util.LinkedHashMap<>();
+                        m.put("name", c.name());
+                        m.put("id",   c.id());
+                        if (c.color() != null) m.put("color", c.color());
+                        return m;
+                    })
+                    .toList();
+        } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(SyncController.class)
+                    .warn("[google/calendars] discovery falló: {}", e.getMessage());
+            return java.util.Collections.emptyList();
         }
     }
 
     @GetMapping("/status")
     public Map<String, Object> status(Authentication auth) {
         Map<String, Object> m = new java.util.LinkedHashMap<>();
-        m.put("googleAuthenticated", auth != null && auth.isAuthenticated() && auth.getPrincipal() instanceof OAuth2User);
+        // Estado REAL de la conexión Google: hay token persistido utilizable
+        // (la sesión HTTP de Electron nunca lleva la cookie OAuth del navegador).
+        m.put("googleAuthenticated", googleTokens.hasToken());
         m.put("principal", auth == null ? "" : auth.getName());
-        // Quick health-check (does NOT call the network — just reports configuration)
         m.put("icloudConfigured", true);
         return m;
+    }
+
+    /** Desconecta la cuenta Google: borra access y refresh token. */
+    @PostMapping("/google/disconnect")
+    public Map<String, Object> disconnectGoogle() {
+        googleTokens.clear();
+        return Map.of("disconnected", true);
     }
 
     @PostMapping("/{provider}")
     public SyncResult sync(@PathVariable String provider,
                            @RequestParam(defaultValue = "full") String mode) {
         CalendarSyncProvider svc = resolve(provider);
-        return switch (mode) {
-            case "pull" -> svc.pull();
-            case "push" -> svc.push();
-            case "full" -> svc.fullSync();
-            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be pull|push|full");
-        };
+        try {
+            return switch (mode) {
+                case "pull" -> svc.pull();
+                case "push" -> svc.push();
+                case "full" -> svc.fullSync();
+                default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "mode must be pull|push|full");
+            };
+        } catch (Exception e) {
+            // No propagar excepciones: el frontend prefiere ver el mensaje a un "failed to fetch"
+            org.slf4j.LoggerFactory.getLogger(SyncController.class)
+                    .error("[sync/{}] error: {}", provider, e.getMessage(), e);
+            return new SyncResult(provider, 0, 0, 0, 0, "error: " + e.getMessage());
+        }
     }
 
     @GetMapping("/oauth-success")

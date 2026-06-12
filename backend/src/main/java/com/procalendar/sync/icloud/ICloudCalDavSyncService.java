@@ -63,6 +63,26 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     public record CalendarInfo(String name, String url, String color) {}
     private volatile List<CalendarInfo> discoveredCalendars;
 
+    /** Combo apple-id + URL para detectar cambios de credenciales y invalidar cache. */
+    private volatile String lastCredFingerprint = "";
+
+    /** Invalida cache si las credenciales han cambiado desde la última llamada. */
+    private void invalidateIfCredsChanged() {
+        String fp = appleId() + "|" + appPassword() + "|" + calendarUrl();
+        if (!fp.equals(lastCredFingerprint)) {
+            log.info("[icloud] credenciales cambiadas, invalidando cache de calendarios");
+            discoveredCalendars = null;
+            lastCredFingerprint = fp;
+        }
+    }
+
+    /** Llamado por SettingsController cuando el usuario guarda nuevas credenciales. */
+    public void invalidateCache() {
+        log.info("[icloud] cache invalidada manualmente");
+        discoveredCalendars = null;
+        lastCredFingerprint = "";
+    }
+
     public ICloudCalDavSyncService(CalendarEventRepository repository, SettingsService settings) {
         this.repository = repository;
         this.settings   = settings;
@@ -82,6 +102,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     @Override
     public SyncResult pull() {
         if (!enabled()) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado");
+        invalidateIfCredsChanged();
         if (appleId().isBlank() || appPassword().isBlank())
             return new SyncResult(name(), 0, 0, 0, 0, "faltan apple-id / app-password");
 
@@ -143,17 +164,18 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     public SyncResult push() {
         if (!enabled()) return new SyncResult(name(), 0, 0, 0, 0, "deshabilitado");
 
-        String fallbackUrl = calendarUrl().isBlank() ? getFirstDiscoveredUrl() : calendarUrl();
         int created = 0, updated = 0, errors = 0;
         String basic = buildBasic();
 
         for (CalendarEvent ev : repository.findAll()) {
 
-            // CASE A: nuevo evento local → crear remoto
+            // CASE A: nuevo evento local → crear remoto.
+            // SOLO si el usuario asignó explícitamente un calendario iCloud (href = URL).
+            // Sin fallback: "Solo local" significa que NO se sube, y los ids de Google
+            // (no-URL) los gestiona el provider de Google.
             if (ev.getSource() == CalendarEvent.Source.LOCAL && ev.getExternalId() == null) {
-                String targetUrl = ev.getExternalCalendarId() != null && !ev.getExternalCalendarId().isBlank()
-                        ? ev.getExternalCalendarId() : fallbackUrl;
-                if (targetUrl == null || targetUrl.isBlank()) continue; // no calendar selected, skip (local-only)
+                String targetUrl = ev.getExternalCalendarId();
+                if (targetUrl == null || !targetUrl.startsWith("http")) continue; // local-only o destino Google
 
                 String uid = "procal-" + ev.getId() + "@local";
                 String ics = buildVCalendar(uid, ev);
@@ -236,6 +258,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
     // Discovery público
     // -----------------------------------------------------------------------
     public List<CalendarInfo> discoverCalendarsWithMeta() throws Exception {
+        invalidateIfCredsChanged();
         String basic = buildBasic();
 
         String principalUrl = resolvePrincipalUrl(basic);
@@ -271,6 +294,9 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                         """, StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() == 401 || res.statusCode() == 403) {
+            throw new RuntimeException("Credenciales iCloud incorrectas. Revisa Apple ID y la app-specific password.");
+        }
         if (res.statusCode() / 100 != 2) throw new RuntimeException("HTTP " + res.statusCode() + " listing home " + homeUrl);
 
         Document doc = parseXml(res.body());
@@ -374,11 +400,6 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
         }
     }
 
-    private String getFirstDiscoveredUrl() {
-        List<CalendarInfo> cals = resolveAllCalendars();
-        return cals.isEmpty() ? null : cals.get(0).url();
-    }
-
     private String buildBasic() {
         return Base64.getEncoder().encodeToString(
                 (appleId() + ":" + appPassword()).getBytes(StandardCharsets.UTF_8));
@@ -394,6 +415,9 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                 .method("PROPFIND", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (res.statusCode() == 401 || res.statusCode() == 403) {
+            throw new RuntimeException("Credenciales iCloud incorrectas. Revisa Apple ID y la app-specific password.");
+        }
         if (res.statusCode() / 100 != 2) throw new RuntimeException("PROPFIND " + url + " -> HTTP " + res.statusCode());
 
         Document doc = parseXml(res.body());
@@ -513,7 +537,7 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
                 .append("PRODID:-//Pro Calendar//EN\r\n")
                 .append("BEGIN:VEVENT\r\n")
                 .append("UID:").append(uid).append("\r\n")
-                .append("DTSTAMP:").append(LocalDateTime.now().format(f)).append("\r\n")
+                .append("DTSTAMP:").append(toUtc(LocalDateTime.now()).format(f)).append("Z\r\n")
                 .append("SUMMARY:").append(escapeIcs(ev.getTitle())).append("\r\n");
         if (ev.getDescription() != null) sb.append("DESCRIPTION:").append(escapeIcs(ev.getDescription())).append("\r\n");
         if (ev.getLocation() != null)    sb.append("LOCATION:").append(escapeIcs(ev.getLocation())).append("\r\n");
@@ -521,11 +545,18 @@ public class ICloudCalDavSyncService implements CalendarSyncProvider {
             sb.append("DTSTART;VALUE=DATE:").append(ev.getStartAt().toLocalDate().format(d)).append("\r\n");
             sb.append("DTEND;VALUE=DATE:").append(ev.getEndAt().toLocalDate().plusDays(1).format(d)).append("\r\n");
         } else {
-            sb.append("DTSTART:").append(ev.getStartAt().format(f)).append("\r\n");
-            sb.append("DTEND:").append(ev.getEndAt().format(f)).append("\r\n");
+            // Horas en UTC (sufijo Z) en lugar de hora "flotante": así el iPhone
+            // muestra el evento a la hora correcta aunque cambie de zona horaria.
+            sb.append("DTSTART:").append(toUtc(ev.getStartAt()).format(f)).append("Z\r\n");
+            sb.append("DTEND:").append(toUtc(ev.getEndAt()).format(f)).append("Z\r\n");
         }
         sb.append("END:VEVENT\r\nEND:VCALENDAR\r\n");
         return sb.toString();
+    }
+
+    /** Convierte una hora local del sistema a UTC. */
+    private static LocalDateTime toUtc(LocalDateTime local) {
+        return local.atZone(ZoneId.systemDefault()).withZoneSameInstant(ZoneOffset.UTC).toLocalDateTime();
     }
 
     private static String escapeIcs(String s) {

@@ -40,10 +40,13 @@ public class GoogleOAuthSuccessHandler extends SimpleUrlAuthenticationSuccessHan
             String refresh = client.getRefreshToken() != null
                     ? client.getRefreshToken().getTokenValue()
                     : null;
-            tokenStore.save(access, refresh);
+            java.time.Instant expiresAt = client.getAccessToken().getExpiresAt() != null
+                    ? client.getAccessToken().getExpiresAt()
+                    : java.time.Instant.now().plusSeconds(3000);
+            tokenStore.save(access, refresh, expiresAt);
         }
 
         // Redirige a una página de confirmación simple
-        response.sendRedirect("/api/sync/oauth-success");
+        response.sendRedirect("/api/sync/oauth-done");
     }
 }

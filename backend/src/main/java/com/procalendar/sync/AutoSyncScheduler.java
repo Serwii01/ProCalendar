@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
 /** Runs a background sync every minute, but only executes the providers when
- *  enough time has passed since the last run (interval configurable from UI). */
+ *  enough time has passed since the last run (interval configurable from UI).
+ *  Silences repeated failures: solo loguea WARN cuando cambia el estado. */
 @Component
 public class AutoSyncScheduler {
 
@@ -23,6 +24,8 @@ public class AutoSyncScheduler {
     private final SettingsService settings;
 
     private volatile LocalDateTime lastRunAt;
+    private volatile String lastIcloudMessage = "";
+    private volatile String lastGoogleMessage = "";
 
     public AutoSyncScheduler(GoogleCalendarSyncService google,
                              ICloudCalDavSyncService icloud,
@@ -32,7 +35,7 @@ public class AutoSyncScheduler {
         this.settings = settings;
     }
 
-    @Scheduled(fixedDelay = 60_000)   // check every minute
+    @Scheduled(fixedDelay = 60_000)
     public void tick() {
         if (!settings.getBool(SettingsService.AUTO_SYNC_ENABLED, true)) return;
 
@@ -40,17 +43,37 @@ public class AutoSyncScheduler {
         if (lastRunAt != null && ChronoUnit.MINUTES.between(lastRunAt, LocalDateTime.now()) < minutes) return;
 
         lastRunAt = LocalDateTime.now();
+
+        // iCloud
         try {
             SyncResult ic = icloud.fullSync();
-            log.info("[autosync] icloud: {}", ic.getMessage());
+            String msg = ic.getMessage() == null ? "" : ic.getMessage();
+            if (!msg.equals(lastIcloudMessage)) {
+                log.info("[autosync] icloud: {}", msg);
+                lastIcloudMessage = msg;
+            }
         } catch (Exception e) {
-            log.warn("[autosync] icloud failed: {}", e.getMessage());
+            String msg = String.valueOf(e.getMessage());
+            if (!msg.equals(lastIcloudMessage)) {
+                log.warn("[autosync] icloud failed: {}", msg);
+                lastIcloudMessage = msg;
+            }
         }
+
+        // Google
         try {
             SyncResult gg = google.fullSync();
-            log.info("[autosync] google: {}", gg.getMessage());
+            String msg = gg.getMessage() == null ? "" : gg.getMessage();
+            if (!msg.equals(lastGoogleMessage)) {
+                log.info("[autosync] google: {}", msg);
+                lastGoogleMessage = msg;
+            }
         } catch (Exception e) {
-            log.warn("[autosync] google failed: {}", e.getMessage());
+            String msg = String.valueOf(e.getMessage());
+            if (!msg.equals(lastGoogleMessage)) {
+                log.warn("[autosync] google failed: {}", msg);
+                lastGoogleMessage = msg;
+            }
         }
     }
 

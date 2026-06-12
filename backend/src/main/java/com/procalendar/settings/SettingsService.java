@@ -44,7 +44,8 @@ public class SettingsService {
     public Map<String, String> snapshotMasked() {
         Map<String, String> out = new HashMap<>();
         for (Setting s : repo.findAll()) {
-            if (s.getKey().toLowerCase().contains("password") || s.getKey().toLowerCase().contains("secret")) {
+            String lk = s.getKey().toLowerCase();
+            if (lk.contains("password") || lk.contains("secret") || lk.contains("token")) {
                 out.put(s.getKey(), s.getValue() == null || s.getValue().isEmpty() ? "" : "••••••••");
             } else {
                 out.put(s.getKey(), s.getValue());

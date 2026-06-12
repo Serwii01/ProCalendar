@@ -6,9 +6,22 @@
 output/
 *.log
 
+# Artefactos de build de Electron (se regeneran)
+desktop/release/
+desktop/resources/backend.jar
+desktop/resources/jre/
+desktop/_jre_tmp.zip
+
+# Base de datos local H2
+*.mv.db
+*.trace.db
+
 # Credenciales locales — nunca committear
 **/client_secret*.json
 **/application-local.properties
 **/application-secrets.properties
 *.env
 .env*
+
+# Config local de herramientas
+.claude/

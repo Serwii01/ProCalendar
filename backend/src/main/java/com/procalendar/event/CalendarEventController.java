@@ -1,5 +1,6 @@
 package com.procalendar.event;
 
+import com.procalendar.sync.google.GoogleCalendarSyncService;
 import com.procalendar.sync.icloud.ICloudCalDavSyncService;
 import com.procalendar.todo.Todo;
 import com.procalendar.todo.TodoRepository;
@@ -20,13 +21,16 @@ public class CalendarEventController {
 
     private final CalendarEventRepository repository;
     private final ICloudCalDavSyncService icloud;
+    private final GoogleCalendarSyncService google;
     private final TodoRepository todoRepo;
 
     public CalendarEventController(CalendarEventRepository repository,
                                    ICloudCalDavSyncService icloud,
+                                   GoogleCalendarSyncService google,
                                    TodoRepository todoRepo) {
         this.repository = repository;
         this.icloud = icloud;
+        this.google = google;
         this.todoRepo = todoRepo;
     }
 
@@ -118,6 +122,13 @@ public class CalendarEventController {
             if (!remoteDeleted) {
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body("No se pudo borrar de iCloud (revisa logs). El evento NO se ha borrado local.");
+            }
+        }
+        if (cascade && ev.getSource() == CalendarEvent.Source.GOOGLE) {
+            remoteDeleted = google.deleteRemote(ev);
+            if (!remoteDeleted) {
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body("No se pudo borrar de Google (revisa logs). El evento NO se ha borrado local.");
             }
         }
         repository.deleteById(id);

@@ -1,0 +1,2 @@
+# Los ejecutables de releases/ se suben con Git LFS (GitHub rechaza ficheros >100MB en push normal)
+releases/*.exe filter=lfs diff=lfs merge=lfs -text
